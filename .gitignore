@@ -1,0 +1,7 @@
+node_modules/
+dist/
+artifact/
+# Mixamo source files may not be redistributed raw: keep them out of the public repo
+private-assets/
+*.fbx
+public/models/rex.json

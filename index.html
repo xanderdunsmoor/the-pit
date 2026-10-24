@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Pit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Lexend:wght@400;500;700&family=Caveat:wght@600&display=swap">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<div id="veil" aria-hidden="true"><div class="veil-mark">THE PIT</div><div class="veil-track"><div id="veil-bar"></div></div></div>
+<div class="stage" id="stage" aria-label="The Pit studio">
+  <div class="hud">
+    <div class="topbar">
+      <span class="chip-ai" title="Rex is a fictional AI character">AI character</span>
+      <button class="icon" id="open-info" aria-label="About, disclaimers and sources"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
+      <button class="icon" id="open-settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+    </div>
+    <div class="middle"><button class="go" id="btn-start">Let them in</button></div>
+    <div class="bottom" id="bottom" hidden>
+      <div class="subs" id="subs" hidden aria-live="polite"><div class="subs-line" id="sub-line"></div></div>
+      <form class="askbar" id="ask-form" novalidate>
+        <button class="icon" type="button" id="btn-replay" aria-label="Replay Rex's last answer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
+        <button class="icon" type="button" id="btn-transcript" aria-label="Read Rex's full answer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 6h14M5 10h14M5 14h10M5 18h7"/></svg></button>
+        <label for="ask-input" class="sr">Ask Rex a question about NVIDIA</label>
+        <input id="ask-input" autocomplete="off" maxlength="200" placeholder="What does NVIDIA sell?">
+        <button class="icon" type="button" id="btn-mic" aria-label="Ask by voice" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button class="icon" type="submit" id="ask-btn" aria-label="Ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <button class="btn locked" type="button" id="btn-decide">Decide</button>
+        <button class="btn" type="button" id="btn-skip">Skip</button>
+      </form>
+    </div>
+  </div>
+  <div class="toast" id="toast" hidden role="status"></div>
+  <div class="sr" id="screen-sr" aria-live="polite"></div>
+  <div class="sr" id="speech-sr" aria-live="polite"></div>
+
+  <div class="scrim" id="m-gate" hidden>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="gate-title">
+      <h2 id="gate-title">Welcome to the shark's chair</h2>
+      <p>The Pit is an educational game. Fictional AI characters pitch real public companies using figures from their SEC filings, and you respond with play money.</p>
+      <ul><li>Nothing here is investment advice or a recommendation.</li><li>Pitchers are AI characters, not company representatives.</li><li>No real money, accounts or trades are involved.</li></ul>
+      <label class="toggle"><input type="checkbox" id="gate-age"> I am 18 or older and understand this is an educational game.</label>
+      <div><button class="btn primary" id="gate-enter" disabled>Enter the studio</button></div>
+    </div>
+  </div>
+
+  <div class="scrim" id="m-decide" hidden>
+    <form class="panel" id="offer-form" role="dialog" aria-modal="true" aria-labelledby="decide-title" novalidate>
+      <div class="phead"><h2 id="decide-title">Your verdict on NVIDIA</h2><button class="close" type="button" data-close aria-label="Close">×</button></div>
+      <h3>Covered</h3><div class="chips" id="covered"></div>
+      <h3>Your notes</h3><div class="notes" id="decide-notes"></div>
+      <h3>Offer</h3>
+      <div class="money"><span>$</span><input id="offer-amount" inputmode="numeric" autocomplete="off" placeholder="250,000" aria-label="Offer amount in play money"></div>
+      <div class="row"><button type="button" class="chip" data-amt="50000">$50K</button><button type="button" class="chip" data-amt="100000">$100K</button><button type="button" class="chip" data-amt="250000">$250K</button><span class="avail" id="avail"></span></div>
+      <input class="field" id="offer-reason" maxlength="140" placeholder="Why? (optional)" aria-label="Reason for your decision">
+      <div class="row"><button class="btn primary" type="submit">I'm in</button><button class="btn" type="button" id="btn-out">I'm out</button></div>
+      <div class="msg" id="offer-msg" role="status"></div>
+    </form>
+  </div>
+
+  <div class="scrim" id="m-done" hidden>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="done-title">
+      <h2 id="done-title">That's the show</h2>
+      <p id="done-text"></p><div id="done-pos"></div>
+      <div class="row"><button class="btn primary" id="btn-reset-2">Run it again</button></div>
+    </div>
+  </div>
+
+  <div class="scrim" id="m-transcript" hidden>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="tx-title">
+      <div class="phead"><h2 id="tx-title">Rex's answer</h2><button class="close" type="button" data-close aria-label="Close">×</button></div>
+      <p class="tx" id="tx-body"></p><p id="tx-src"></p>
+    </div>
+  </div>
+
+  <div class="scrim" id="m-notes" hidden>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="notes-title">
+      <div class="phead"><h2 id="notes-title">Your notes</h2><button class="close" type="button" data-close aria-label="Close">×</button></div>
+      <div class="notes" id="notes-list"></div>
+    </div>
+  </div>
+
+  <div class="scrim" id="m-chart" hidden>
+    <div class="panel wide" role="dialog" aria-modal="true" aria-label="Chart from the studio screen">
+      <div class="phead"><span></span><button class="close" type="button" data-close aria-label="Close">×</button></div>
+      <img id="chart-img" alt="">
+    </div>
+  </div>
+
+  <div class="scrim" id="m-info" hidden>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="info-title">
+      <div class="phead"><h2 id="info-title">About The Pit</h2><button class="close" type="button" data-close aria-label="Close">×</button></div>
+      <p>An educational game with play money. Nothing here is investment advice or a recommendation to buy or sell any security.</p>
+      <h3>The pitcher</h3>
+      <p>Rex Voltaire is a fictional AI character. He is not affiliated with NVIDIA and does not represent its management. He only says prepared lines built from NVIDIA's filings.</p>
+      <h3>Sources</h3>
+      <ul>
+        <li><a href="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm" target="_blank" rel="noopener">NVIDIA Form 10-Q</a>, fiscal Q2 2027 (Apr 27 – Jul 26, 2026), filed Aug 26, 2026</li>
+        <li><a href="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/nvda-20260125.htm" target="_blank" rel="noopener">NVIDIA Form 10-K</a>, fiscal 2026 (year ended Jan 25, 2026)</li>
+      </ul>
+      <h3>The line-up</h3>
+      <p>Companies are chosen by a published rule: the 2–3 largest US-listed companies in each sector, 25 in total. No company pays to appear.</p>
+      <h3>Credits</h3>
+      <p>Rex's body is Quaternius's public-domain character model. Studio sounds are from Kenney's Impact Sounds (kenney.nl), also public domain.</p>
+      <h3>Voice questions</h3>
+      <p>The microphone uses your browser's own speech recognition. Some browsers, including Chrome, send the audio to their provider to turn it into text. The Pit does not record or store it.</p>
+    </div>
+  </div>
+
+  <div class="scrim" id="m-settings" hidden>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="set-title">
+      <div class="phead"><h2 id="set-title">Settings</h2><button class="close" type="button" data-close aria-label="Close">×</button></div>
+      <h3>Captions</h3>
+      <label class="toggle"><input type="checkbox" id="cap-on"> Show captions as Rex speaks</label>
+      <h3>Studio</h3>
+      <div class="seg" role="group" aria-label="Studio style">
+        <button id="st-classic" data-studio="classic" aria-pressed="true">Classic</button>
+        <button id="st-boardroom" data-studio="boardroom" aria-pressed="false">Boardroom</button>
+        <button id="st-arena" data-studio="arena" aria-pressed="false">Arena</button>
+      </div>
+      <h3>On your desk</h3>
+      <div class="deskgrid" id="deskgrid">
+        <label class="toggle"><input type="checkbox" id="desk-water" value="water"> Glass of water</label>
+        <label class="toggle"><input type="checkbox" id="desk-notepad" value="notepad"> Notepad (takes notes)</label>
+        <label class="toggle"><input type="checkbox" id="desk-coffee" value="coffee"> Coffee mug</label>
+        <label class="toggle"><input type="checkbox" id="desk-calculator" value="calculator"> Calculator</label>
+        <label class="toggle"><input type="checkbox" id="desk-whiskey" value="whiskey"> Whiskey, neat</label>
+        <label class="toggle"><input type="checkbox" id="desk-stressball" value="stressball"> Stress ball</label>
+        <label class="toggle"><input type="checkbox" id="desk-duck" value="duck"> Rubber duck</label>
+        <label class="toggle"><input type="checkbox" id="desk-plant" value="plant"> Desk cactus</label>
+      </div>
+      <h3>Rex's voice</h3>
+      <label class="toggle"><input type="checkbox" id="voice-on" checked> Voice on</label>
+      <div class="row"><select class="field" id="voice-pick" aria-label="Choose Rex's voice" style="flex:1;min-width:0"><option>Finding voices…</option></select><button class="btn" id="voice-test" type="button">Test</button></div>
+      <p id="voice-note">The most natural voice on this device is locked in, so Rex sounds the same every time. ★ marks the most natural ones.</p>
+      <h3>Sound</h3>
+      <label class="toggle"><input type="checkbox" id="sfx-on" checked> Studio sound and effects</label>
+      <h3>Game</h3>
+      <div><button class="btn" id="btn-reset">Reset game</button></div>
+    </div>
+  </div>
+</div>
+
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
