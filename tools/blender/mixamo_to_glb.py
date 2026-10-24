@@ -1,9 +1,11 @@
-# Combines the Mixamo character FBX and clip FBXs (in mx/) into one GLB with named actions. Run with the bpy package.
-import bpy,re,os
+import bpy,re,os,sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from face_rig import add_face_rig
 bpy.ops.wm.read_factory_settings(use_empty=True)
 D='mx/'
 bpy.ops.import_scene.fbx(filepath=D+'Ch33_nonPBR.fbx')
 arm=[o for o in bpy.data.objects if o.type=='ARMATURE'][0]; arm.name='Rex'
+add_face_rig(arm, bpy.data.objects['Ch33_Body'], bpy.data.objects['Ch33_Eyelashes'], 'mixamorig7:')
 strip=lambda n: re.sub(r'^mixamorig\d*:','',n)
 for b in arm.data.bones: b.name=strip(b.name)
 for o in bpy.data.objects:
@@ -29,5 +31,5 @@ for img in bpy.data.images:
         if img.size[0]>t: img.scale(t,t)
 for o in bpy.data.objects:
     if o.type=='MESH': print('MAT',o.name,[ (n.type,n.image.name if n.type=='TEX_IMAGE' else '') for m in o.data.materials for n in m.node_tree.nodes])
-bpy.ops.export_scene.gltf(filepath='rexjoe.glb',export_format='GLB',export_image_format='JPEG',export_jpeg_quality=82,export_animation_mode='ACTIONS',export_force_sampling=True,export_optimize_animation_size=True,export_def_bones=True,export_morph=False,export_yup=True)
+bpy.ops.export_scene.gltf(filepath='rexjoe.glb',export_format='GLB',export_image_format='JPEG',export_jpeg_quality=82,export_animation_mode='ACTIONS',export_force_sampling=True,export_optimize_animation_size=True,export_def_bones=True,export_morph=True,export_morph_normal=False,export_yup=True)
 print('SIZE',os.path.getsize('rexjoe.glb'))

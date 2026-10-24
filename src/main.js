@@ -9,13 +9,15 @@ import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { VignetteShader } from "three/addons/shaders/VignetteShader.js";
+import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
+import { SRC_Q, SRC_K, GLOSSARY, PITCH, REACT, CHALLENGE, POSITIVE, LINES, glossaryLine, cardLine, splitSentences, plain, forSpeech, lineId } from "./content.js";
 
 (async () => {
 'use strict';
 // ================= PRELOAD: everything loads behind a veil, then the room fades in =================
 const SFX_FILES = { step_wood: ["footstep_wood_000", "footstep_wood_001", "footstep_wood_002", "footstep_wood_003", "footstep_wood_004"], step_concrete: ["footstep_concrete_000", "footstep_concrete_001", "footstep_concrete_002", "footstep_concrete_003", "footstep_concrete_004"], squish: ["impactSoft_medium_000", "impactSoft_medium_001", "impactSoft_medium_002"], glass: ["impactGlass_light_000", "impactGlass_light_001", "impactGlass_light_002"], clunk: ["impactMetal_heavy_000"], door: ["impactPlank_medium_000", "impactWood_heavy_000"], tick: ["impactWood_light_000", "impactWood_light_001", "impactWood_light_002"], bell: ["impactBell_heavy_000"] };
 const TEX_FILES = ["floor_diff", "floor_nor_gl", "floor_rough", "velvet_diff", "velvet_nor_gl", "velvet_rough", "metal_diff", "metal_nor_gl", "metal_rough", "floor_ao"];
-const ASSETS = { glb: null, sfx: {}, tex: {}, env: null };
+const ASSETS = { glb: null, sfx: {}, tex: {}, env: null, voice: null, voiceRaw: {} };
 const veilBar = document.getElementById("veil-bar");
 async function preload() {
   const jobs = []; let done = 0; const tick = () => { done++; if (veilBar) veilBar.style.transform = `scaleX(${done / jobs.length})`; };
@@ -31,82 +33,13 @@ async function preload() {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, j = ((y + h) * w + x) * 4, o = ((h - 1 - y) * w + x) * 4; const e = px[j]; const s = e ? Math.pow(2, e - 136) : 0; out[o] = px[i] * s; out[o + 1] = px[i + 1] * s; out[o + 2] = px[i + 2] * s; out[o + 3] = 1; }
     const t = new THREE.DataTexture(out, w, h, THREE.RGBAFormat, THREE.FloatType); t.mapping = THREE.EquirectangularReflectionMapping; t.flipY = false; t.needsUpdate = true; ASSETS.env = t;
   }));
+  add(fetch("voice/index.json").then(r => r.ok ? r.json() : null).then(j => { if (!j) return; ASSETS.voice = j; ASSETS.voiceRaw = {}; return Promise.all(Object.keys(j.lines).map(id => fetch(`voice/${id}.mp3`).then(r => r.ok ? r.arrayBuffer() : null).then(b => { if (b) ASSETS.voiceRaw[id] = b; }))); }));
   if (document.fonts && document.fonts.load) ["800 40px 'Bricolage Grotesque'", "700 20px 'Bricolage Grotesque'", "400 20px Lexend", "500 20px Lexend", "700 20px Lexend", "600 20px Caveat"].forEach(f => add(document.fonts.load(f)));
   await Promise.all(jobs);
 }
 await preload();
 const DBG = []; const dbg = m => { DBG.push(String(m)); if (location.hash === '#debug') { let d = document.getElementById('dbg'); if (!d) { d = document.createElement('pre'); d.id = 'dbg'; d.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;max-width:60vw;white-space:pre-wrap;background:#000c;color:#0f0;font:11px monospace;padding:6px;pointer-events:none'; document.body.appendChild(d); } d.textContent = DBG.join('\n'); } };
 addEventListener('error', e => dbg('ERR ' + e.message));
-// ================= CONTENT =================
-const SRC_Q = { label: "10-Q, fiscal Q2 2027", url: "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm" };
-const SRC_K = { label: "10-K, fiscal 2026", url: "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/nvda-20260125.htm" };
-const GLOSSARY = {
-  "revenue": "All the money customers paid the company for its products before any costs are subtracted. Also called sales.",
-  "data center": "Buildings full of computers that run websites, cloud services and AI. NVIDIA sells the chips and systems inside them.",
-  "hyperscalers": "The very largest cloud computing companies, which build huge data centers and rent computing power to others.",
-  "fiscal year": "The 12-month period a company uses for its accounts. NVIDIA's ends in late January, so fiscal 2026 ended January 25, 2026.",
-  "gross margin": "The share of revenue left after paying the direct cost of making the products. 75% means 75 cents of each sales dollar remain.",
-  "operating income": "Profit from the core business after paying for products, research, salaries and other running costs, before interest and taxes.",
-  "net income": "The bottom-line profit after every cost, interest and tax has been paid.",
-  "long-term debt": "Money the company has borrowed that is not due within the next year, usually through bonds called senior notes.",
-  "research and development": "Spending on inventing and designing new products, often shortened to R&D.",
-  "buyback": "When a company uses its cash to buy its own shares from the market, leaving fewer shares in circulation.",
-  "accounts receivable": "Money customers owe the company for products already delivered but not yet paid for.",
-  "operating cash flow": "The actual cash the business brought in from its normal operations, as opposed to profit on paper.",
-  "inventory": "Products and materials the company has made or bought but not yet sold.",
-  "tariff": "A tax charged on goods when they are imported into a country."
-};
-const PITCH = {
-  company: "NVIDIA", ticker: "NVDA", pitcher: "Rex Voltaire",
-  hook: { id: "hook", q: "The opening pitch",
-    text: "Good evening, shark. I'm Rex Voltaire, and tonight I'm pitching NVIDIA. We design the chips that train and run artificial intelligence, and the world's biggest tech companies buy them by the warehouse. Last quarter we brought in $96.2 billion in [[revenue]], more than double a year ago, and kept about 62 cents of every dollar as profit. The catch? Five customers account for about 70% of the money owed to us. If they slow down, so could we.",
-    simple: "I'm Rex, pitching NVIDIA. They make the chips that power AI. Sales more than doubled in a year, to about $96 billion in three months, and they keep most of it as profit. But a handful of giant customers make up a lot of the business, which is risky.",
-    card: ["$96.2B", "revenue, one quarter"],
-    visual: { type: "bars", title: "Quarterly revenue, $ billions", unit: "B", items: [["Apr–Jul 2025", 46.743], ["Apr–Jul 2026", 96.221, true]] }, src: [SRC_Q] },
-  questions: [
-    { id: "sell", q: "What does NVIDIA sell?", s: "What it sells", card: ["93%", "of sales from data centers"],
-      a: "Chips and complete computer systems for artificial intelligence. Last quarter our [[data center]] business brought in $89.0 billion of our $96.2 billion in [[revenue]], about 93% of everything. More than half of that came from [[hyperscalers]], the giant cloud companies. A smaller category, edge computing, added $7.2 billion.",
-      simple: "NVIDIA makes the super-powerful chips that AI runs on. About 93 cents of every dollar it earns comes from selling them to companies that build AI data centers.",
-      visual: { type: "bars", title: "Revenue by market, Apr–Jul 2026, $B", unit: "B", items: [["Hyperscale", 48.710, true], ["AI clouds, industrial, enterprise", 40.313], ["Edge computing", 7.198]] }, src: [SRC_Q] },
-    { id: "growth", q: "How fast is NVIDIA growing?", s: "Growth", card: ["+106%", "revenue vs a year ago"],
-      a: "Fast. Revenue for the quarter ended July 26, 2026 was $96.2 billion, up 106% from $46.7 billion a year earlier. For the full [[fiscal year]] that ended January 25, 2026, revenue was $215.9 billion, up 65% from $130.5 billion. Two years before that, it was $60.9 billion.",
-      simple: "Sales more than doubled in one year. Three years ago NVIDIA sold about $61 billion worth of products in a year. Last year it sold about $216 billion.",
-      visual: { type: "bars", title: "Full-year revenue, $ billions", unit: "B", items: [["Fiscal 2024", 60.922], ["Fiscal 2025", 130.497], ["Fiscal 2026", 215.938, true]] }, src: [SRC_Q, SRC_K] },
-    { id: "profit", q: "Is NVIDIA profitable?", s: "Profit", card: ["62¢", "profit per $1 of sales"],
-      a: "Very. On $96.2 billion of revenue last quarter, our [[gross margin]] was 75%, [[operating income]] was $63.7 billion and [[net income]] was $59.7 billion. That's about 62 cents of profit on every dollar of sales. Diluted earnings per share were $2.46, up from $1.08 a year ago.",
-      simple: "After paying for everything, including making the chips, salaries and taxes, NVIDIA kept about 62 cents of every dollar customers paid.",
-      visual: { type: "bars", title: "From sales to profit, Apr–Jul 2026, $B", unit: "B", items: [["Revenue", 96.221], ["Gross profit", 72.142], ["Operating income", 63.734], ["Net income", 59.688, true]] }, src: [SRC_Q] },
-    { id: "debt", q: "How much debt does NVIDIA carry?", s: "Debt", card: ["$33.4B", "long-term debt"],
-      a: "More than we used to. Our [[long-term debt]] was $33.4 billion on July 26, 2026, up from $8.5 billion six months earlier, roughly four times as much. We held $22.4 billion in cash and cash equivalents, not counting marketable securities, which are reported separately. Shareholders' equity was $229.0 billion. We also have a $25 billion commercial paper program with nothing borrowed under it.",
-      simple: "NVIDIA borrowed a lot more this year. Long-term debt went from about $8.5 billion to about $33.4 billion in six months. That's a fast jump, even though the company is much bigger than its debt.",
-      visual: { type: "bars", title: "Long-term debt, $ billions", unit: "B", items: [["Jan 25, 2026", 8.468], ["Jul 26, 2026", 33.366, true]] }, src: [SRC_Q, SRC_K] },
-    { id: "spend", q: "Where does NVIDIA's money go?", s: "Spending", card: ["$7.1B", "R&D, one quarter"],
-      a: "Into inventing the next chip, and into our own stock. We spent $7.1 billion on [[research and development]] last quarter, up 64% from a year ago, and total operating expenses rose 55%. In the first half of this fiscal year we also spent $39.0 billion on share repurchases, a [[buyback]].",
-      simple: "NVIDIA spends billions every quarter designing new chips. It's also using a lot of cash to buy back its own shares.",
-      visual: { type: "bars", title: "R&D spending per quarter, $ billions", unit: "B", items: [["Apr–Jul 2025", 4.291], ["Apr–Jul 2026", 7.054, true]] }, src: [SRC_Q] },
-    { id: "customers", q: "Who are NVIDIA's customers?", s: "Customers", card: ["70%", "owed by 5 customers"],
-      a: "Mostly large companies building AI data centers, and a few of them are very large. As of July 26, 2026, five direct customers each accounted for between 10% and 22% of our [[accounts receivable]], about 70% combined. Customers based outside the United States made up 38% of revenue last quarter, and China, including Hong Kong, contributed $7.9 billion.",
-      simple: "A handful of huge buyers make up much of the business. Five customers owe NVIDIA about 70% of the money it's waiting to collect.",
-      visual: { type: "bars", title: "Share of money owed to NVIDIA, Jul 26, 2026", unit: "%", items: [["Customer A", 22, true], ["Customer B", 14], ["Customer C", 13], ["Customer D", 11], ["Customer E", 10]] }, src: [SRC_Q] },
-    { id: "cash", q: "Does NVIDIA make real cash?", s: "Cash flow", card: ["$74.4B", "cash from operations, 6 months"],
-      a: "Real cash. In the first half of this fiscal year, our [[operating cash flow]] was $74.4 billion, up from $42.8 billion in the same six months a year earlier. For all of fiscal 2026 it was $102.7 billion.",
-      simple: "The business brings in real money, about $74 billion in six months, not just profits on paper.",
-      visual: { type: "bars", title: "Operating cash flow, Feb–Jul, $ billions", unit: "B", items: [["2025", 42.779], ["2026", 74.421, true]] }, src: [SRC_Q, SRC_K] },
-    { id: "risk", q: "What could go wrong?", s: "What could go wrong", risk: true, card: ["4", "risks on the table"], note: "4 risks",
-      a: "Plenty, and I'll show you every card. One: five customers make up about 70% of what we're owed, so a pullback by a few buyers would hit hard. Two: our filing says licensed H200 chips shipped to China face a 25% U.S. [[tariff]] that we haven't been able to pass on. Three: our [[long-term debt]] roughly quadrupled to $33.4 billion in six months, and we'll have to repay or refinance it. Four: [[inventory]] grew to $31.6 billion from $21.4 billion in January. If demand cools, that's a lot of product on the shelf.",
-      simple: "If a few big customers stop buying, sales could drop fast. Selling to China is getting harder and more expensive. NVIDIA has taken on more debt. And it's holding a big pile of chips it still needs to sell.",
-      visual: { type: "list", title: "Risks from NVIDIA's own filings", items: ["Five customers ≈ 70% of receivables", "25% tariff on licensed China H200s, not passed on", "Long-term debt $8.5B → $33.4B in six months", "Inventory $21.4B → $31.6B since January"] }, src: [SRC_Q] }
-  ]
-};
-// Rex's pre-written reactions (said before an answer; never facts)
-const REACT = {
-  challenge: ["Fair hit.", "Tough one. I respect that.", "I was hoping you'd push on that."],
-  positive: ["Glad you noticed.", "Now you're seeing the trick."],
-  neutral: ["Watch closely.", "Let me show you.", "Ah. Good card to pull."]
-};
-const CHALLENGE = /(too much|a lot of|worr|concern|really\?|seriously|risky|scary|expensive|overvalued|bubble|why should|prove|doubt|skeptic|dangerous|yikes|sketchy|suspicious|not sure)/i;
-const POSITIVE = /(impressive|wow|nice|amazing|love|cool|great|incredible|awesome)/i;
-
 // ================= FREE-TEXT MATCHING (prepared answers only) =================
 const KEYWORDS = {
   sell: [["what do you sell", 4], ["what does nvidia do", 4], ["what do you do", 4], ["you do", 3], ["you guys do", 4], ["does the company do", 4], ["what do you make", 4], ["business", 2], ["product", 2], ["sell", 2], ["make", 1], ["chip", 2], ["gpu", 2], ["data center", 2], ["datacenter", 2], ["hyperscal", 2], ["segment", 2], ["market", 1], ["gaming", 2], ["what is nvidia", 4], ["who are you", 2], ["ai", 1]],
@@ -148,17 +81,21 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 let busy = false;
 
 // ================= AUDIO (synthesised, with room reverb) =================
-let AC = null, noiseBuf = null, bus = null, amb = null;
-function audio() {
-  if (!S.sfx) return null;
+let AC = null, noiseBuf = null, bus = null, amb = null, verb = null, voiceIn = null, voicePan = null;
+function audio() { return S.sfx ? ctx() : null; }
+function ctx() {
   try {
     if (!AC) {
       AC = new (window.AudioContext || window.webkitAudioContext)();
       noiseBuf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       const ir = AC.createBuffer(2, AC.sampleRate * 1.4, AC.sampleRate); for (let c = 0; c < 2; c++) { const x = ir.getChannelData(c); for (let i = 0; i < x.length; i++) x[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / x.length, 3); }
-      const verb = AC.createConvolver(); verb.buffer = ir; const send = AC.createGain(); send.gain.value = .28;
-      bus = AC.createGain(); bus.connect(AC.destination); bus.connect(send).connect(verb).connect(AC.destination);
-      loadSamples();
+      verb = AC.createConvolver(); verb.buffer = ir; const send = AC.createGain(); send.gain.value = .28; verb.connect(AC.destination);
+      bus = AC.createGain(); bus.connect(AC.destination); bus.connect(send).connect(verb);
+      // Rex's voice comes from where he stands, with a touch of the studio's echo
+      voicePan = AC.createPanner(); voicePan.panningModel = "HRTF"; voicePan.distanceModel = "inverse"; voicePan.refDistance = 3.2; voicePan.rolloffFactor = .7;
+      voiceIn = AC.createGain(); voiceIn.gain.value = 1.15; const vsend = AC.createGain(); vsend.gain.value = .13;
+      voiceIn.connect(voicePan); voicePan.connect(AC.destination); voicePan.connect(vsend).connect(verb);
+      loadSamples(); decodeVoice();
     }
     if (AC.state === "suspended") AC.resume(); return AC;
   } catch (e) { return null; }
@@ -218,8 +155,14 @@ const SFX = {
 };
 
 // ================= VOICE: best free voice, locked; whole answer queued (no gaps) =================
+// Rex's studio voice: every line pre-rendered with an open-source neural voice (Kokoro), played through the room.
+// Browser speech remains as a fallback and as an option in settings.
+const NEURAL = { voiceURI: "neural", name: "Rex (studio voice)", lang: "en-US", neural: true };
+const VBUF = {};
+function decodeVoice() { if (!AC || !ASSETS.voice) return; Object.entries(ASSETS.voiceRaw).forEach(([id, raw]) => { if (VBUF[id]) return; try { AC.decodeAudioData(raw.slice(0), b => { VBUF[id] = b; }, () => {}); } catch (e) {} }); }
+const MOUTH = { open: 0, wide: 0, frames: null, t0: 0 };
 const Voice = {
-  list: [], chosen: null, talking: false, token: 0, safety: null, fake: null,
+  list: [], chosen: null, talking: false, token: 0, safety: null, fake: null, timers: [], srcs: [],
   score(v) {
     const n = v.name; let s = 0;
     if (/natural/i.test(n)) s += 60; if (/premium|enhanced/i.test(n)) s += 45; if (/neural/i.test(n)) s += 40; if (/siri/i.test(n)) s += 35; if (/online/i.test(n)) s += 20;
@@ -230,35 +173,71 @@ const Voice = {
     return s;
   },
   async init() {
-    const synth = window.speechSynthesis; if (!synth) { this.ui(); return; }
-    const get = () => synth.getVoices().filter(v => /^en/i.test(v.lang));
-    if (!get().length) await new Promise(r => { let d = false; const fin = () => { if (!d) { d = true; r(); } }; synth.onvoiceschanged = fin; setTimeout(fin, 2000); });
-    this.list = get().sort((a, b) => this.score(b) - this.score(a)).slice(0, 8);
+    const synth = window.speechSynthesis; let sys = [];
+    if (synth) {
+      const get = () => synth.getVoices().filter(v => /^en/i.test(v.lang));
+      if (!get().length) await new Promise(r => { let d = false; const fin = () => { if (!d) { d = true; r(); } }; synth.onvoiceschanged = fin; setTimeout(fin, 2000); });
+      sys = get().sort((a, b) => this.score(b) - this.score(a)).slice(0, 7);
+    }
+    this.list = (ASSETS.voice ? [NEURAL] : []).concat(sys);
     this.chosen = this.list.find(v => v.voiceURI === S.voiceURI) || this.list[0] || null;
-    if (this.chosen && !S.voiceURI) { S.voiceURI = this.chosen.voiceURI; save(); }
+    if (this.chosen && S.voiceURI !== this.chosen.voiceURI) { S.voiceURI = this.chosen.voiceURI; save(); }
     this.ui();
   },
   ui() {
     const sel = $("voice-pick");
     if (!this.list.length) { sel.innerHTML = "<option>No voices on this device</option>"; sel.disabled = true; $("voice-test").disabled = true; $("voice-note").textContent = "This browser has no speech voices. Turn captions on to read Rex."; return; }
-    sel.innerHTML = this.list.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)}${/natural|premium|enhanced|neural|siri/i.test(v.name) ? " ★" : ""}</option>`).join("");
-    sel.value = this.chosen.voiceURI;
+    sel.innerHTML = this.list.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)}${v.neural ? " ★" : ""}</option>`).join("");
+    sel.value = this.chosen.voiceURI; $("voice-note").textContent = "";
   },
   pick(uri) { this.chosen = this.list.find(v => v.voiceURI === uri) || this.chosen; S.voiceURI = this.chosen ? this.chosen.voiceURI : ""; save(); },
-  forSpeech(t) { return t.replace(/\$([\d.]+) billion/g, "$1 billion dollars").replace(/\$([\d.]+)B\b/g, "$1 billion dollars").replace(/≈/g, "about"); },
-  stop() { this.token++; clearTimeout(this.safety); clearTimeout(this.fake); try { speechSynthesis.cancel(); } catch (e) {} this.talking = false; },
+  forSpeech,
+  stop() { this.token++; clearTimeout(this.safety); clearTimeout(this.fake); this.timers.forEach(clearTimeout); this.timers = []; this.srcs.forEach(x => { try { x.stop(); } catch (e) {} }); this.srcs = []; MOUTH.frames = null; try { speechSynthesis.cancel(); } catch (e) {} this.talking = false; },
+  // where Rex is, for positioned sound (called every frame)
+  place(x, y, z, cam) {
+    if (!voicePan) return; const t = AC.currentTime;
+    voicePan.positionX.setTargetAtTime(x, t, .05); voicePan.positionY.setTargetAtTime(y, t, .05); voicePan.positionZ.setTargetAtTime(z, t, .05);
+    const L = AC.listener; if (L.positionX) { L.positionX.value = cam.position.x; L.positionY.value = cam.position.y; L.positionZ.value = cam.position.z; cam.getWorldDirection(_fw); L.forwardX.value = _fw.x; L.forwardY.value = _fw.y; L.forwardZ.value = _fw.z; L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0; }
+  },
+  // mouth shape right now, from the pre-computed loudness/brightness of the clip that is playing
+  sample() {
+    if (!MOUTH.frames || !AC) { MOUTH.open *= .8; MOUTH.wide *= .8; return MOUTH; }
+    const f = Math.floor((AC.currentTime - MOUTH.t0) * ASSETS.voice.fps); const fr = MOUTH.frames;
+    if (f < 0 || f * 2 + 1 >= fr.length) { MOUTH.open *= .8; return MOUTH; }
+    MOUTH.open = fr[f * 2] / 255; MOUTH.wide = fr[f * 2 + 1] / 255; return MOUTH;
+  },
+  clipsFor(sentences) { if (!ASSETS.voice || !this.chosen || !this.chosen.neural) return null; const ids = sentences.map(t => lineId(t)); return ids.every(id => ASSETS.voice.lines[id]) ? ids : null; },
   // cb: { onSentence(i), onWord(i,len), onDone() }
   say(sentences, cb = {}) {
     this.stop(); const tok = this.token; const synth = window.speechSynthesis;
-    const finish = () => { if (tok !== this.token) return; clearTimeout(this.safety); this.talking = false; cb.onDone && cb.onDone(); };
-    if (!(S.voice && synth && this.chosen)) {
+    const finish = () => { if (tok !== this.token) return; clearTimeout(this.safety); this.talking = false; MOUTH.frames = null; cb.onDone && cb.onDone(); };
+    const ids = S.voice ? this.clipsFor(sentences) : null;
+    if (ids && ctx()) {
+      decodeVoice();
+      // natural pacing: a short breath between sentences, a longer one after a question
+      let i = 0; const next = () => {
+        if (tok !== this.token) return; if (i >= ids.length) { finish(); return; }
+        const idx = i++, id = ids[idx], meta = ASSETS.voice.lines[id], buf = VBUF[id];
+        if (!buf) { this.timers.push(setTimeout(() => { i--; next(); }, 60)); return; }
+        const src = AC.createBufferSource(); src.buffer = buf; src.connect(voiceIn); const t0 = AC.currentTime + .03; src.start(t0); this.srcs = [src];
+        this.talking = true; MOUTH.t0 = t0; MOUTH.frames = Uint8Array.from(atob(meta.m), c => c.charCodeAt(0));
+        cb.onSentence && cb.onSentence(idx);
+        const words = sentences[idx].split(/\s+/); const total = words.reduce((t, w) => t + w.length + 2, 0); let acc = 0;
+        words.forEach(w => { const at = acc / total * meta.d * 1000; acc += w.length + 2; this.timers.push(setTimeout(() => { if (tok === this.token) cb.onWord && cb.onWord(idx, w.length); }, at + 30)); });
+        src.onended = () => { if (tok !== this.token) return; MOUTH.frames = null; const gap = /\?$/.test(sentences[idx]) ? 420 : 200 + Math.random() * 120; this.timers.push(setTimeout(next, idx === ids.length - 1 ? 0 : gap)); };
+      };
+      next(); this.safety = setTimeout(finish, ids.reduce((t, id) => t + ASSETS.voice.lines[id].d, 0) * 1000 + ids.length * 600 + 5000);
+      return;
+    }
+    const sysVoice = this.chosen && this.chosen.neural ? this.list.find(v => !v.neural) : this.chosen;
+    if (!(S.voice && synth && sysVoice)) {
       let i = 0; const next = () => { if (tok !== this.token) return; if (i >= sentences.length) { finish(); return; } const idx = i++; this.talking = true; cb.onSentence && cb.onSentence(idx); this.fake = setTimeout(next, Math.max(1500, sentences[idx].split(/\s+/).length * 340)); };
       next(); return;
     }
     let total = 0;
     // Chrome can drop an utterance queued right after cancel(); give it a beat first
     this.fake = setTimeout(() => { if (tok !== this.token) return; sentences.forEach((text, idx) => {
-      const u = new SpeechSynthesisUtterance(this.forSpeech(text)); u.voice = this.chosen; u.lang = this.chosen.lang; u.rate = .98; u.pitch = .92;
+      const u = new SpeechSynthesisUtterance(this.forSpeech(text)); u.voice = sysVoice; u.lang = sysVoice.lang; u.rate = .98; u.pitch = .92;
       u.onstart = () => { if (tok !== this.token) return; this.talking = true; cb.onSentence && cb.onSentence(idx); };
       u.onboundary = e => { if (tok !== this.token) return; if (!e.name || e.name === "word") cb.onWord && cb.onWord(idx, e.charLength || 4); };
       if (idx === sentences.length - 1) { u.onend = finish; u.onerror = finish; }
@@ -268,6 +247,7 @@ const Voice = {
     this.safety = setTimeout(finish, total * 600 + 6000);
   }
 };
+const _fw = new THREE.Vector3();
 
 // ================= CAPTIONS: word by word, only when switched on =================
 const tokenize = raw => raw.match(/\[\[[^\]]+\]\]|\S+/g) || [];
@@ -289,8 +269,6 @@ const Captions = {
 };
 
 // ================= TEXT HELPERS =================
-const splitSentences = t => t.split(/(?<=[^A-Z][.!?])\s+(?=[A-Z0-9“"$\[])/);
-const plain = t => t.replace(/\[\[([^\]]+)\]\]/g, "$1");
 const UNEASY = /(catch|risk|hit hard|tariff|haven't|refinance|pile|cools|slow down|wrong|worry|harder|more debt|borrowed|concentrat|quadrupled|on the shelf|fair hit|tough one)/i;
 
 // ================= 3D STUDIO =================
@@ -385,7 +363,18 @@ function initGL(hooks) {
   box(scW + .16, scH + .16, .12, std(0x0d0d10, { roughness: .4, metalness: .5 }), 0, 0, -.07, screenGroup);
   const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(scW, scH), new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false })); screenGroup.add(screenMesh);
   cyl(.04, .04, .9, std(0x1a1a1d, { metalness: .7, roughness: .3 }), 0, -scH / 2 - .45, -.1, screenGroup);
-  const screenGlow = new THREE.PointLight(0x6fa8ff, 2.2, 7, 2); screenGlow.position.set(-2.2, 1.9, -4.4); scene.add(screenGlow);
+  const screenGlow = new THREE.PointLight(0x6fa8ff, 2.2, 7, 2); screenGlow.position.copy(SCREEN_POS).add(new THREE.Vector3(-Math.sin(.36), 0, -Math.cos(.36)).multiplyScalar(.12)); scene.add(screenGlow);
+  // the screen is a real light source: a panel light the size of the screen falls on Rex and the floor
+  RectAreaLightUniformsLib.init();
+  const screenLight = new THREE.RectAreaLight(0xbcd2ff, 0, scW, scH); screenLight.position.set(0, 0, .02); screenLight.rotation.y = Math.PI; screenGroup.add(screenLight);
+  // LED pixel grid up close, glass reflections on top
+  const ledTex = canvasTex(8, 8, g => { g.fillStyle = "#fff"; g.fillRect(0, 0, 8, 8); g.fillStyle = "#8a8a8a"; g.fillRect(0, 6, 8, 2); g.fillRect(6, 0, 2, 8); }); ledTex.colorSpace = THREE.NoColorSpace; ledTex.wrapS = ledTex.wrapT = THREE.RepeatWrapping; ledTex.repeat.set(560, 320);
+  const led = new THREE.Mesh(new THREE.PlaneGeometry(scW, scH), new THREE.MeshBasicMaterial({ map: ledTex, blending: THREE.MultiplyBlending, premultipliedAlpha: true, transparent: true, depthWrite: false })); led.position.z = .002; screenGroup.add(led);
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(scW, scH), new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: .04, metalness: 0, transparent: true, opacity: .16, envMapIntensity: 1.4, depthWrite: false })); glass.position.z = .004; screenGroup.add(glass);
+  const glowTex = canvasTex(256, 256, (g, w) => { const gr = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2); gr.addColorStop(0, "rgba(255,255,255,.55)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, w, w); });
+  const floorGlow = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.2), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x000000, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+  floorGlow.rotation.x = -Math.PI / 2; floorGlow.position.set(SCREEN_POS.x + .6, .006, SCREEN_POS.z + 1.1); floorGlow.rotation.z = .36; room.add(floorGlow);
+  const screenLevel = { cur: 0, t: .35 };
 
   // ----- desk + chair -----
   const deskMat = std(0xffffff, { roughness: .32 }); deskMat.map = woodTex("#5a3520", "30,12,4", 3);
@@ -434,6 +423,21 @@ function initGL(hooks) {
   const canLights = []; const canMat = new THREE.MeshBasicMaterial({ color: 0xffe0b0 }); const CAN = new THREE.Color(0xffe0b0).multiplyScalar(3);
   for (let i = 0; i < 7; i++) { const x = -3.6 + i * 1.2; cyl(.11, .14, .22, rigMat, x, 4.45, -1.2, rig, 16); const lens = new THREE.Mesh(new THREE.CircleGeometry(.1, 20), canMat); lens.rotation.x = Math.PI / 2; lens.position.set(x, 4.335, -1.2); rig.add(lens); canLights.push(lens); }
   const themeGroup = new THREE.Group(); scene.add(themeGroup); const strips = [], themeLights = [];
+  // studio haze: soft light shafts under each ceiling can and a few drifting dust specks catching the light
+  const beamTex = canvasTex(64, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, "rgba(255,255,255,.9)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, w, h); const gx = g.createLinearGradient(0, 0, w, 0); gx.addColorStop(0, "rgba(0,0,0,1)"); gx.addColorStop(.5, "rgba(0,0,0,0)"); gx.addColorStop(1, "rgba(0,0,0,1)"); g.globalCompositeOperation = "destination-out"; g.fillStyle = gx; g.fillRect(0, 0, w, h); });
+  // soft volumetric look: brightest where you look straight through the beam, fading to nothing at its edges and toward the floor
+  const beamMat = new THREE.ShaderMaterial({ uniforms: { color: { value: new THREE.Color(0x5a4a38) }, opacity: { value: 1 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    vertexShader: "varying vec3 vN; varying vec3 vV; varying float vY; void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz); vY = uv.y; gl_Position = projectionMatrix * viewMatrix * wp; }",
+    fragmentShader: "uniform vec3 color; uniform float opacity; varying vec3 vN; varying vec3 vV; varying float vY; void main(){ float f = abs(dot(normalize(vN), normalize(vV))); f = pow(f, 2.5); float a = f * pow(vY, 1.4) * opacity * 2.4; gl_FragColor = vec4(color * a, 1.0); }" });
+  beamTex.dispose();
+  const beams = new THREE.Group(); scene.add(beams);
+  for (let i = 0; i < 7; i++) { const x = -3.6 + i * 1.2; const cone = new THREE.Mesh(new THREE.CylinderGeometry(.1, .95, 4.2, 24, 1, true), beamMat); cone.position.set(x, 4.33 - 2.1, -1.2); beams.add(cone); }
+  const keyBeam = new THREE.Mesh(new THREE.CylinderGeometry(.08, 1.25, 4.8, 28, 1, true), beamMat.clone()); keyBeam.material.uniforms.color.value.setHex(0x6a5a44); beams.add(keyBeam);
+  const dustN = 260, dustPos = new Float32Array(dustN * 3), dustSeed = new Float32Array(dustN);
+  for (let i = 0; i < dustN; i++) { dustPos[i * 3] = -4 + Math.random() * 8; dustPos[i * 3 + 1] = .4 + Math.random() * 4; dustPos[i * 3 + 2] = -4.5 + Math.random() * 4.5; dustSeed[i] = Math.random() * 100; }
+  const dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
+  const dustTex = canvasTex(32, 32, (g, w) => { const gr = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, w, w); });
+  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ map: dustTex, size: .012, color: 0xb8a68a, transparent: true, opacity: .55, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true })); scene.add(dust);
 
   // ----- Rex: jointed rig (shoulder → elbow → hand, hip → knee → foot) -----
   const rex = new THREE.Group(); scene.add(rex);
@@ -502,8 +506,10 @@ function initGL(hooks) {
       const modelMats = [];
       m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; const mm = o.material; mm.metalness = 0; mm.metalnessMap = null; mm.roughnessMap = null; mm.roughness = /hair|lash/i.test(o.name) ? .6 : .82; mm.envMapIntensity = .55; if (/hair|lash/i.test(o.name)) { mm.alphaTest = .45; mm.transparent = false; mm.side = THREE.DoubleSide; } if (!modelMats.includes(mm)) modelMats.push(mm); } });
       const B = n => m.getObjectByName(n);
-      const bn = { hips: B("Hips"), spine: B("Spine2"), neck: B("Neck"), head: B("Head"), uaR: B("RightArm"), laR: B("RightForeArm"), fR: B("RightHand"), uaL: B("LeftArm"), laL: B("LeftForeArm"), fL: B("LeftHand"), footL: B("LeftFoot"), footR: B("RightFoot"), tipL: B("LeftHandMiddle1") };
-      if (Object.values(bn).some(b => !b)) throw new Error("rig");
+      // face controls baked in Blender (tools/blender/face_rig.py): shape keys on the head, eye bones for gaze
+      const face = []; m.traverse(o => { if (o.isMesh && o.morphTargetDictionary) face.push(o); });
+      const bn = { eyeL: B("LeftEye"), eyeR: B("RightEye"), hips: B("Hips"), spine: B("Spine2"), neck: B("Neck"), head: B("Head"), uaR: B("RightArm"), laR: B("RightForeArm"), fR: B("RightHand"), uaL: B("LeftArm"), laL: B("LeftForeArm"), fL: B("LeftHand"), footL: B("LeftFoot"), footR: B("RightFoot"), tipL: B("LeftHandMiddle1") };
+      if (["hips", "head", "neck", "uaR", "laR", "fR", "uaL", "laL", "fL", "footL", "footR", "tipL", "spine"].some(k => !bn[k])) throw new Error("rig");
       // keep him on his mark: strip sideways/forward drift from the hips in every clip (the walk is moved by code)
       g.animations.forEach(c => c.tracks.forEach(tr => { if (tr.name === "Hips.position") { const v = tr.values; for (let i = 3; i < v.length; i += 3) { v[i] = v[0]; v[i + 2] = v[2]; } } }));
       // the card lives in his left hand
@@ -530,7 +536,8 @@ function initGL(hooks) {
       }
       const arm = () => ({ u: new THREE.Vector3(0, -1, 0), l: new THREE.Vector3(0, -1, 0), tu: new THREE.Vector3(0, -1, 0), tl: new THREE.Vector3(0, -1, 0), w: new Spring(0, 16, 1) });
       const restQ = ["head", "neck", "uaR", "laR", "uaL", "laL"].map(k => [bn[k], bn[k].quaternion.clone()]);
-      Object.assign(MODEL, { ready: true, restQ, m, bn, mixer, A, L, walk, cur: "Idle", oneShot: null, arms: { R: arm(), L: arm() } });
+      const eyeRest = [bn.eyeL, bn.eyeR].filter(Boolean).map(b => [b, b.quaternion.clone()]);
+      Object.assign(MODEL, { ready: true, restQ, eyeRest, face, m, bn, mixer, A, L, walk, cur: "Idle", oneShot: null, arms: { R: arm(), L: arm() } });
       mixer.addEventListener("finished", e => { if (MODEL.oneShot && e.action === A[MODEL.oneShot.name]) { const done = MODEL.oneShot.done; MODEL.oneShot = null; e.action.fadeOut(BLEND); A[MODEL.cur].reset().fadeIn(BLEND).play(); done && done(); } });
       softenEnv();
     } catch (err) { dbg("model err " + err.message); rex.children.forEach(c => { c.visible = true; }); MODEL.ready = false; }
@@ -581,15 +588,42 @@ function initGL(hooks) {
     }
     GD.look.x += (yawT - GD.look.x) * Math.min(1, dt * 3.5); GD.look.y += (pitchT - GD.look.y) * Math.min(1, dt * 3.5);
     rotWorld(Mo.bn.neck, UP, GD.look.x * .35); rotWorld(h, UP, GD.look.x * .45);
-    rotWorld(h, right, -GD.look.y * .5 - (.08 * st.mu - .04 * st.mc));
+    rotWorld(h, right, -GD.look.y * .5 - (.08 * st.mu - .04 * st.mc) - st.mOpen * .035);
     rotWorld(h, fwd, .1 * st.lk);
+    driveFace(dt, t, walking, talking);
   }
-  function placeBlob() { const onDisc = Math.hypot(rex.position.x - MARK.x, rex.position.z - MARK.z) < 1.12; rexBlob.position.set(rex.position.x, onDisc ? .093 : .004, rex.position.z); rexBlob.material.opacity = 1 - st.sil; rexBlob.visible = st.sil < .95; }
+  // ----- face: speech-driven jaw and lips, mood on brows and mouth corners, natural blinks, eyes that look at you -----
+  const FX = { jaw: 0, wide: 0, round: 0, smile: 0, bUp: 0, bIn: 0, bDown: 0, blink: 0, blinkAt: now() + 1800, blinkT: -1, dbl: false, lookY: 0, lookP: 0 };
+  function setMorph(name, v) { const F = MODEL.face; for (let i = 0; i < F.length; i++) { const d = F[i].morphTargetDictionary, k = d[name]; if (k !== undefined) F[i].morphTargetInfluences[k] = v; } }
+  function driveFace(dt, t, walking, talking) {
+    const Mo = MODEL; if (!Mo.face.length) return; const kk = x => Math.min(1, dt * x);
+    const open = talking ? st.mOpen : 0, wide = st.mWide;
+    const jawT = open * .52; FX.jaw += (jawT - FX.jaw) * kk(jawT > FX.jaw ? 28 : 14);
+    FX.wide += (open * wide * .9 - FX.wide) * kk(16); FX.round += (open * (1 - wide) * .55 - FX.round) * kk(14);
+    FX.smile += ((.42 * st.mc + (talking ? .08 : .14)) * (1 - st.mu) - FX.smile) * kk(3);
+    FX.bUp += ((.22 * st.mc + Math.min(.35, open * .25)) * (talking ? 1 : .4) - FX.bUp) * kk(6);
+    FX.bIn += (.75 * st.mu - FX.bIn) * kk(3); FX.bDown += (.35 * st.lk - FX.bDown) * kk(3);
+    // blinks: every few seconds, sometimes a double, quicker closing than opening
+    if (FX.blinkT < 0 && t > FX.blinkAt) { FX.blinkT = 0; FX.dbl = Math.random() < .18; }
+    if (FX.blinkT >= 0) { FX.blinkT += dt * 1000; const b = FX.blinkT; FX.blink = b < 70 ? b / 70 : b < 170 ? 1 - (b - 70) / 100 : 0; if (b >= 170) { if (FX.dbl) { FX.dbl = false; FX.blinkT = -1; FX.blinkAt = t + 120; } else { FX.blinkT = -1; FX.blinkAt = t + 2200 + Math.random() * 4200; } } }
+    // eyes: aim at the target with the head doing the rest; small saccades from the glance offsets
+    const tg = st.look > .5 ? SCREEN_POS : camera.position; let ey = 0, ep = 0;
+    if (Mo.bn.eyeL && !walking) { Mo.bn.head.getWorldPosition(_v3); _v4.copy(tg).sub(_v3); const yawRel = angDiff(rex.rotation.y, Math.atan2(_v4.x, _v4.z)), pitch = Math.atan2(_v4.y, Math.hypot(_v4.x, _v4.z)); ey = Math.max(-.38, Math.min(.38, yawRel - GD.look.x * .8 + GD.glance.x * .8)); ep = Math.max(-.25, Math.min(.25, pitch - GD.look.y * .5 + GD.glance.y)); }
+    const prevY = FX.lookY; FX.lookY += (ey - FX.lookY) * kk(22); FX.lookP += (ep - FX.lookP) * kk(22);
+    if (Math.abs(ey - prevY) > .25 && FX.blinkT < 0 && Math.random() < .5) FX.blinkAt = t;   // big eye shifts often come with a blink
+    Mo.eyeRest.forEach(([b, q]) => b.quaternion.copy(q));
+    if (Mo.bn.eyeL) { const right = _v2.set(1, 0, 0).applyQuaternion(rex.quaternion); [Mo.bn.eyeL, Mo.bn.eyeR].forEach(b => { rotWorld(b, UP, FX.lookY); rotWorld(b, right, -FX.lookP); }); }
+    const lidDown = Math.max(0, -FX.lookP) * .45;
+    setMorph("jawOpen", FX.jaw); setMorph("mouthWide", FX.wide); setMorph("mouthRound", FX.round); setMorph("smile", FX.smile);
+    setMorph("browsUp", FX.bUp); setMorph("browsInnerUp", FX.bIn); setMorph("browsDown", FX.bDown);
+    setMorph("blinkL", Math.min(1, FX.blink + lidDown)); setMorph("blinkR", Math.min(1, FX.blink + lidDown));
+  }
+  function placeBlob() { const onDisc = Math.hypot(rex.position.x - MARK.x, rex.position.z - MARK.z) < 1.12; rexBlob.position.set(rex.position.x, rex.position.y + .004, rex.position.z); rexBlob.material.opacity = 1 - st.sil; rexBlob.visible = st.sil < .95; }
 
   const SP = n => new Spring(0, n || 55, .7);
   const J = { a0x: SP(), a0z: SP(), e0: SP(), a1x: SP(), a1z: SP(), e1: SP(), lean: SP(40), tilt: SP(40), pitch: SP(40), yaw: new Spring(0, 30, .85) };
   const st = { sil: 1, walk: null, phase: 0, stepIdx: 0, speed: 0, heading: 0, talkAmp: 0, mouthPulse: 0, blinkAt: now() + 3000, bow: 0,
-    pointing: false, mood: "neutral", mc: 0, mu: 0, listen: false, lk: 0, trickUntil: 0, fidget: null, nextFidget: now() + 9000, away: false, look: 0, cardPop: 1 };
+    pointing: false, mood: "neutral", mc: 0, mu: 0, listen: false, lk: 0, trickUntil: 0, fidget: null, nextFidget: now() + 9000, away: false, look: 0, cardPop: 1, mOpen: 0, mWide: 0 };
 
   function drawCard(big, small) {
     const g = cardCanvas.getContext("2d"); const w = 256, h = 360; const acc = "#" + THEMES[S.studio].accent.toString(16).padStart(6, "0");
@@ -619,7 +653,7 @@ function initGL(hooks) {
     floorMat.aoMap = ASSETS.tex.floor_ao || null; floorMat.aoMapIntensity = 1;
     floorMat.needsUpdate = true;
     if (wallMat.map) wallMat.map.dispose();
-    wallMat.map = noiseTex(T.wall, name === "classic" ? .12 : .05, 3, 256); wallMat.map.wrapS = wallMat.map.wrapT = THREE.RepeatWrapping; wallMat.map.repeat.set(6, 2); wallMat.roughness = T.wallRough; wallMat.needsUpdate = true;
+    wallMat.map = noiseTex(T.wall, name === "classic" ? .045 : .03, 3, 256); wallMat.map.wrapS = wallMat.map.wrapT = THREE.RepeatWrapping; wallMat.map.repeat.set(6, 2); wallMat.roughness = T.wallRough; wallMat.needsUpdate = true;
     hemi.color.setHex(T.ambient); hemi.groundColor.setHex(T.ground); key.color.setHex(T.key);
     setLin(ringMat.color, T.accent); setLin(brass.color, T.accent); setLin(M.brass.color, T.accent); M.brass.userData.base = M.brass.color.clone();
     setLin(M.jacket.color, T.jacket); M.jacket.userData.base = M.jacket.color.clone();
@@ -691,7 +725,7 @@ function initGL(hooks) {
     g.fillStyle = "#7e8996"; g.font = "400 24px 'Lexend', sans-serif"; g.fillText("SOURCE: " + sc.src.toUpperCase(), 56, h - 36);
   }
   function setScreen(mode, visual, src) {
-    sc.mode = mode; if (visual !== undefined) sc.visual = visual; if (src !== undefined) sc.src = src;
+    sc.mode = mode; screenLevel.t = mode === "visual" ? .85 : mode === "reveal" ? 1 : .3; if (visual !== undefined) sc.visual = visual; if (src !== undefined) sc.src = src;
     if (mode === "reveal") sc.revealStart = now(); if (mode === "visual") { sc.buildStart = now(); sc.hl = -1; }
     drawScreen(); screenTex.needsUpdate = true;
     const v = sc.visual;
@@ -716,21 +750,27 @@ function initGL(hooks) {
   function shotTarget() {
     const hx = rex.position.x, hz = rex.position.z;
     switch (shot.name) {
-      case "rex": return tgt4(hx, 1.62, hz, baseFov * .5 * shot.push);
+      case "rex": return tgt4(hx, 1.6 + rex.position.y, hz, baseFov * .36 * shot.push);
       case "mid": return tgt4(hx * .7 + .1, 1.22, hz + .6, baseFov * .9);
       case "two": return tgt4((hx + SCREEN_POS.x) / 2, 1.7, (hz + SCREEN_POS.z) / 2, baseFov * .82);
       case "screen": return tgt4(SCREEN_POS.x, SCREEN_POS.y, SCREEN_POS.z, baseFov * .6);
-      case "listen": return tgt4(hx, 1.55, hz, baseFov * .62);
+      case "listen": return tgt4(hx, 1.52 + rex.position.y, hz, baseFov * .5);
       case "desk": return tgt4(0, .8, 1.8, baseFov);
       default: return tgt4(WIDE_LOOK.x, WIDE_LOOK.y, WIDE_LOOK.z, baseFov);
     }
   }
-  function setShot(name) { if (reduced && name !== "wide") name = name === "screen" ? "two" : "mid"; if (shot.name !== name) shot.fovAt = now() + 250; shot.name = name; }
+  // cut = a hard broadcast cut (camera jumps, focus pulls in); otherwise a glide
+  function setShot(name, cut) {
+    if (reduced && name !== "wide") name = name === "screen" ? "two" : "mid"; if (shot.name === name) return;
+    shot.fovAt = now() + 250; shot.name = name;
+    if (cut && !reduced) { const tg = shotTarget(); [cam.lx, cam.ly, cam.lz].forEach((sp, i) => { sp.x = sp.t = tg[i]; sp.v = 0; }); cam.fov.x = cam.fov.t = tg[3]; cam.fov.v = 0; camera.fov = tg[3]; camera.updateProjectionMatrix(); shot.fovAt = 0; focus.cur = focus.cur * 1.6 + 1.5; }
+  }
+  const focus = { cur: 6 }; const _bd = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 
   // ----- studio reflections and camera polish: light glow, depth blur in close-ups, vignette -----
   const pmrem = new THREE.PMREMGenerator(renderer);
   try { scene.environment = ASSETS.env ? pmrem.fromEquirectangular(ASSETS.env).texture : pmrem.fromScene(new RoomEnvironment(), .04).texture; scene.environmentIntensity = ASSETS.env ? .45 : 1; } catch (e) {}
-  let composer = null, bokeh = null, bloom = null;
+  let composer = null, bokeh = null, bloom = null, filmPass = null;
   try {
     const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 });
     composer = new EffectComposer(renderer, rt); composer.setPixelRatio(dpr);
@@ -739,6 +779,11 @@ function initGL(hooks) {
     bokeh = new BokehPass(scene, camera, { focus: 6, aperture: .00002, maxblur: .006 }); bokeh.enabled = false; composer.addPass(bokeh);
     const vg = new ShaderPass(VignetteShader); vg.uniforms.offset.value = .95; vg.uniforms.darkness.value = 1.1; composer.addPass(vg);
     composer.addPass(new OutputPass());
+    // a light film look: fine moving grain and a hint of lens colour fringing toward the edges
+    filmPass = new ShaderPass({ uniforms: { tDiffuse: { value: null }, time: { value: 0 }, grain: { value: .022 }, ca: { value: .0016 } },
+      vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform sampler2D tDiffuse; uniform float time, grain, ca; varying vec2 vUv; float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); } void main(){ vec2 d = vUv - .5; float r2 = dot(d, d); vec2 o = d * ca * r2 * 4.0; vec3 c = vec3(texture2D(tDiffuse, vUv + o).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - o).b); float n = h(vUv * 1000.0 + fract(time) * 37.0) - .5; float l = dot(c, vec3(.299, .587, .114)); c += n * grain * (1.0 - l * .6); gl_FragColor = vec4(c, 1.0); }" });
+    composer.addPass(filmPass);
   } catch (e) { composer = null; dbg("composer " + e.message); }
   function softenEnv() { scene.traverse(o => { if (o.material && o.material.isMeshStandardMaterial && !o.material.userData.envSet) { if (!(o.material.envMapIntensity < 1)) o.material.envMapIntensity = o.material.metalness > .5 ? 1 : .5; o.material.userData.envSet = true; } }); }
 
@@ -827,8 +872,19 @@ function initGL(hooks) {
     camera.position.set(camBase.x + sway * (hx + mxs * .1), camBase.y + sway * (hy - mys * .04), camBase.z);
     tmpV.set(cam.lx.step(dt) + sway * hx * .4, cam.ly.step(dt) + sway * hy * .4, cam.lz.step(dt)); camera.lookAt(tmpV);
     const nf = cam.fov.step(dt); if (Math.abs(nf - camera.fov) > .01) { camera.fov = nf; camera.updateProjectionMatrix(); }
+    Voice.place(rex.position.x, 1.6, rex.position.z, camera); const mo = Voice.sample(); st.mOpen = mo.open; st.mWide = mo.wide;
 
     // lights
+    screenLevel.cur += (screenLevel.t - screenLevel.cur) * k(2.2);
+    screenLight.intensity = screenLevel.cur * 5.5 * (1 - st.sil); screenGlow.intensity = 2.2 * (.35 + .65 * screenLevel.cur);
+    floorGlow.material.color.setRGB(.16 * screenLevel.cur, .21 * screenLevel.cur, .32 * screenLevel.cur);
+    for (let i = 0; i < beams.children.length - 1; i++) beams.children[i].visible = lightState.canCur > .2;
+    beamMat.uniforms.opacity.value = lightState.canCur;
+    _bd.copy(key.target.position).sub(key.position).normalize(); keyBeam.quaternion.setFromUnitVectors(_up, _bd.negate()); keyBeam.position.copy(key.position).addScaledVector(_bd, -2.4); keyBeam.material.uniforms.opacity.value = Math.min(1, key.intensity / 28) * 1.1 * (1 - st.sil * .7);
+    if (!reduced) { for (let i = 0; i < dustN; i++) { const j = i * 3; dustPos[j] += Math.sin(T * .13 + dustSeed[i]) * .0006; dustPos[j + 1] += Math.sin(T * .09 + dustSeed[i] * 1.7) * .0004 - .00008; dustPos[j + 2] += Math.cos(T * .11 + dustSeed[i]) * .0005; if (dustPos[j + 1] < .3) dustPos[j + 1] = 4.4; } dustGeo.attributes.position.needsUpdate = true; }
+    // eyes adjusting: bright doorway or a darker act shifts exposure slowly, like a camera's auto-exposure
+    const bright = key.intensity / 28 * .45 + hemi.intensity / 1.9 * .35 + backLight.intensity / 18 * .7 + .1;
+    const expT = Math.max(.78, Math.min(1.3, .95 / Math.pow(Math.max(.3, bright), .3))); renderer.toneMappingExposure += (expT - renderer.toneMappingExposure) * k(.9);
     lightState.canCur += (lightState.cans - lightState.canCur) * k(3); lightState.stripCur += (lightState.strips - lightState.stripCur) * k(3);
     canMat.color.copy(CAN).multiplyScalar(.15 + .85 * lightState.canCur);
     for (let i = 0; i < strips.length; i++) { const s = strips[i]; const pulse = S.studio === "arena" ? .75 + .25 * Math.sin(T * 2 + i) : 1; s.material.color.copy(s.userData.c).multiplyScalar(Math.max(.05, lightState.stripCur * pulse)); }
@@ -853,10 +909,12 @@ function initGL(hooks) {
     if (!MODEL.ready) proceduralRex(t, T, dt, k, walking, talking, stride);
     if ((sc.mode === "reveal" && t - sc.revealStart < 1700) || (sc.mode === "visual" && t - sc.buildStart < 1300)) { drawScreen(); screenTex.needsUpdate = true; }
     if (cardPivot && cardPivot.userData.s0) cardPivot.scale.copy(cardPivot.userData.s0).multiplyScalar(st.cardPop); else if (cardPivot) cardPivot.scale.set(st.cardPop, st.cardPop, 1);
+    { const dd = Math.hypot(rex.position.x - MARK.x, rex.position.z - MARK.z); rex.position.y = .09 * (1 - smoother(Math.min(1, Math.max(0, (dd - 1.02) / .2)))); }
     updateModel(dt, T, t, walking, talking); placeBlob();
     if (composer && quality > 0) {
       const close = shot.name === "rex" || shot.name === "listen"; bokeh.enabled = quality > 1 && close && !reduced;
-      if (bokeh.enabled) { tmpV.set(rex.position.x, 1.55, rex.position.z); bokeh.uniforms.focus.value = camera.position.distanceTo(tmpV); }
+      tmpV.set(rex.position.x, 1.55 + rex.position.y, rex.position.z); focus.cur += (camera.position.distanceTo(tmpV) - focus.cur) * k(3.5); if (bokeh.enabled) bokeh.uniforms.focus.value = focus.cur;
+      if (filmPass) { filmPass.uniforms.time.value = T; filmPass.enabled = !reduced; }
       composer.render(dt);
     } else renderer.render(scene, camera);
     if (!firstFrame) { firstFrame = true; const v = document.getElementById("veil"); if (v) { v.classList.add("gone"); setTimeout(() => v.remove(), 1400); } }
@@ -889,7 +947,7 @@ function initGL(hooks) {
     for (let i = 0; i < brows.length; i++) { const b = brows[i], s = b.userData.s; b.rotation.z = s * (-.15 * (1 - st.mu) + .3 * st.mu); b.position.y = .075 + .01 * st.mc + .006 * st.mu + .008 * st.lk; }
     // mouth: eased toward a target that follows speech boundaries, never snapping
     st.mouthPulse = Math.max(0, st.mouthPulse - dt * 4);
-    const flap = talking ? (st.mouthPulse > 0 ? .35 + st.mouthPulse * .8 : .3 + .45 * Math.abs(Math.sin(T * 11) * .7 + Math.sin(T * 19) * .3)) : .22;
+    const flap = talking && st.mOpen > 0 ? .25 + st.mOpen * .85 : talking ? (st.mouthPulse > 0 ? .35 + st.mouthPulse * .8 : .3 + .45 * Math.abs(Math.sin(T * 11) * .7 + Math.sin(T * 19) * .3)) : .22;
     mouth.scale.y += (flap - mouth.scale.y) * k(14); mouth.scale.x = 1.3 + .25 * st.mc - .25 * st.mu; mouth.position.y = -.11 + .006 * st.mc - .004 * st.mu;
     for (let i = 0; i < pupils.length; i++) pupils[i].position.y = -.004 * st.mu;
     if (t > st.blinkAt) { const bp = (t - st.blinkAt) / 140; eyes.scale.y = bp < 1 ? Math.max(.1, Math.abs(1 - bp * 2)) : 1; if (bp >= 1) st.blinkAt = t + 2500 + Math.random() * 3000; }
@@ -910,10 +968,10 @@ function initGL(hooks) {
     perform(item) {
       if (item.card) { drawCard(item.card[0], item.card[1]); st.trickUntil = now() + 1900; SFX.flick(); const ry = cardPivot.rotation.y; tween(cardPivot.rotation, "y", ry + Math.PI * 2, 700, 250, backOut); tween(st, "cardPop", 2.2, 380, 200, backOut); tween(st, "cardPop", 1, 450, 1700); }
       if (item.visual) {
-        setShot("screen"); later(2100, () => setShot(st.pointing || st.walk ? "two" : "rex"));
+        setShot("screen", Math.random() < .6); later(2100, () => setShot(st.pointing || st.walk ? "two" : "rex", Math.random() < .5));
         if (reduced) { rex.position.set(SCREEN_SPOT.x, 0, SCREEN_SPOT.z); st.pointing = true; st.away = true; }
         else { st.away = true; later(item.card ? 1200 : 0, () => walkTo(SCREEN_SPOT.x, SCREEN_SPOT.z, 1500, () => { st.pointing = true; })); }
-      } else setShot("rex");
+      } else setShot("rex", Math.random() < .5);
     },
     finishAnswer() { shot.pushT = 1; later(1400, () => { if (Voice.talking) return; st.pointing = false; st.mood = "neutral"; setShot("mid"); if (st.away) { st.away = false; walkTo(MARK.x, MARK.z, 1500); } }); },
     entrance(onReady) {
@@ -964,9 +1022,9 @@ try {
     click(kind) {
       if (kind === "notes") { $("notes-list").innerHTML = notesHTML(); openPanel("m-notes"); }
       else if (kind === "screen") { $("chart-img").src = R.screenImage(); $("chart-img").alt = $("screen-sr").textContent || "Studio screen"; openPanel("m-chart"); }
-      else if (kind === "card" && current && current.item.card && !busy) { const [b, s] = current.item.card; speakLines([`${b}. ${s.charAt(0).toUpperCase() + s.slice(1)}.`], null); }
+      else if (kind === "card" && current && current.item.card && !busy) { const [b, s] = current.item.card; speakLines(splitSentences(cardLine([b, s])), null); }
     },
-    sip(kind) { if (kind === "whiskey" && !Voice.talking && !busy && $("bottom").hidden === false) later2(900, () => speakLines([pick(["Liquid courage. Bold move, shark.", "Easy now. I need you sharp.", "Pour one for the tariffs."])], null)); }
+    sip(kind) { if (kind === "whiskey" && !Voice.talking && !busy && $("bottom").hidden === false) later2(900, () => speakLines(splitSentences(pick(LINES.sips)), null)); }
   });
 } catch (e) { R = null; const m = document.createElement("div"); m.className = "glmsg"; m.textContent = "The 3D studio needs WebGL, which this browser has turned off."; stage.prepend(m); }
 function later2(ms, f) { setTimeout(f, ms); }
@@ -1000,7 +1058,7 @@ function present(item, typed, simple, reaction, onDone) {
   if (item.card && item.id !== "hook") addNote(item);
   speakLines(raw, item, onDone);
 }
-function sayLine(line) { current = { item: { q: "Rex", a: line }, raw: [line] }; $("tx-title").textContent = "Rex"; $("tx-body").textContent = line; $("tx-src").textContent = ""; R && R.setShot("rex"); speakLines([line], null); }
+function sayLine(line) { current = { item: { q: "Rex", a: line }, raw: [line] }; $("tx-title").textContent = "Rex"; $("tx-body").textContent = line; $("tx-src").textContent = ""; R && R.setShot("rex"); speakLines(splitSentences(line), null); }
 function addNote(q) { if (S.notes.some(n => n.id === q.id)) return; S.notes.push({ id: q.id, s: q.s, big: q.note || q.card[0] }); save(); R && R.drawNotes(); }
 function reactionFor(typed) { if (CHALLENGE.test(typed)) return pick(REACT.challenge); if (POSITIVE.test(typed)) return pick(REACT.positive); return Math.random() < .45 ? pick(REACT.neutral) : null; }
 $("btn-replay").addEventListener("click", () => { if (!current || busy) return; if (current.item.visual && R) { R.setScreen("visual", current.item.visual, current.item.src[0].label); R.perform(current.item); } speakLines(current.raw, current.item); });
@@ -1012,26 +1070,26 @@ let sugI = 0; setInterval(() => { const inp = $("ask-input"); if (document.activ
 $("ask-input").addEventListener("focus", () => R && R.listen(true));
 $("ask-input").addEventListener("blur", () => R && R.listen(false));
 $("ask-input").addEventListener("input", () => {
-  if (Voice.talking && !interrupted && !busy && $("ask-input").value.length === 1) { interrupted = true; Voice.stop(); Captions.clear(); R && R.interrupt(); setTimeout(() => { Voice.say(["Go ahead, shark."], { onSentence() { Captions.start("Go ahead, shark."); }, onDone() { setTimeout(() => Captions.clear(), 1200); } }); R && R.listen(true); }, 120); }
+  if (Voice.talking && !interrupted && !busy && $("ask-input").value.length === 1) { interrupted = true; Voice.stop(); Captions.clear(); R && R.interrupt(); setTimeout(() => { Voice.say([LINES.goAhead], { onSentence() { Captions.start(LINES.goAhead); }, onDone() { setTimeout(() => Captions.clear(), 1200); } }); R && R.listen(true); }, 120); }
 });
 $("ask-form").addEventListener("submit", e => { e.preventDefault(); ask($("ask-input").value.trim()); });
 // Act 2 opens with Rex asking you something; mid-grilling he flips it back on you
-function act2() { if (busy || S.decided || S.skipped) return; SFX.stinger("act2"); R && R.act(2); later2(800, () => { if (busy) return; pending = "goodbad"; sayLine("So, shark. Good news or bad news first?"); }); }
-function maybeWorry() { if (worryAsked || S.asked.length < 3) return; worryAsked = true; later2(1300, () => { if (Voice.talking || busy || S.decided) return; pending = "worry"; sayLine("Let me flip it. What worries you most, shark? The customers, the debt, or China?"); }); }
+function act2() { if (busy || S.decided || S.skipped) return; SFX.stinger("act2"); R && R.act(2); later2(800, () => { if (busy) return; pending = "goodbad"; sayLine(LINES.goodBad); }); }
+function maybeWorry() { if (worryAsked || S.asked.length < 3) return; worryAsked = true; later2(1300, () => { if (Voice.talking || busy || S.decided) return; pending = "worry"; sayLine(LINES.worry); }); }
 function ask(typed) {
   if (busy) return; if (!typed) { $("ask-input").focus(); return; }
   $("ask-input").value = ""; R && R.listen(false);
   const p = pending; pending = null;
   if (p === "goodbad") {
-    if (/\b(bad|worst|negative|downside|risks?|ugly)\b/i.test(typed)) { const q = PITCH.questions.find(x => x.id === "risk"); mark(q); present(q, typed, false, "Bad news first. Brave.", maybeWorry); return; }
-    if (/\b(good|best|positive|upside|great)\b/i.test(typed)) { const q = PITCH.questions.find(x => x.id === (S.asked.includes("growth") ? "profit" : "growth")); mark(q); present(q, typed, false, "Good news it is.", maybeWorry); return; }
+    if (/\b(bad|worst|negative|downside|risks?|ugly)\b/i.test(typed)) { const q = PITCH.questions.find(x => x.id === "risk"); mark(q); present(q, typed, false, LINES.badFirst, maybeWorry); return; }
+    if (/\b(good|best|positive|upside|great)\b/i.test(typed)) { const q = PITCH.questions.find(x => x.id === (S.asked.includes("growth") ? "profit" : "growth")); mark(q); present(q, typed, false, LINES.goodFirst, maybeWorry); return; }
   }
-  if (ADVICE.test(typed)) { sayLine("I can't tell you whether to invest, shark. That's your call, and tonight it's play money. I can show you the numbers and the risks so you can decide."); return; }
+  if (ADVICE.test(typed)) { sayLine(LINES.advice); return; }
   const q = matchQuestion(typed); const mentionsCo = /\b(you|your|nvidia|nvda|company|they|their)\b/i.test(typed); const term = glossaryHit(typed);
-  if (term && (!q || !mentionsCo) && !SIMPLER.test(typed)) { sayLine(`${term.charAt(0).toUpperCase() + term.slice(1)}. ${GLOSSARY[term]}`); return; }
+  if (term && (!q || !mentionsCo) && !SIMPLER.test(typed)) { sayLine(glossaryLine(term)); return; }
   if (SIMPLER.test(typed)) { const target = q || (current && current.item.simple ? current.item : null); if (target && target.simple) { mark(target); present(target, typed, true); return; } }
   if (q) { mark(q); present(q, typed, false, reactionFor(typed), maybeWorry); return; }
-  sayLine("That one's outside my act tonight. Ask me what NVIDIA sells, how fast it's growing, its profits, its debt, where the money goes, who the customers are, its cash flow, or what could go wrong.");
+  sayLine(LINES.outside);
 }
 function mark(q) { if (q.id && !S.asked.includes(q.id)) { S.asked.push(q.id); save(); } updateDecide(); }
 function updateDecide() { $("btn-decide").classList.toggle("locked", !S.asked.includes("risk")); }
@@ -1072,9 +1130,9 @@ $("offer-form").addEventListener("submit", e => {
 });
 $("btn-out").addEventListener("click", () => { S.decided = "out"; save(); wrapUp("You're out on NVIDIA.", false); });
 function wrapUp(text, bow) {
-  SFX.tension(false); closePanels(); busy = true; R && R.act(2); const line = bow ? "A pleasure doing business, shark." : "Fair enough. The show goes on.";
+  SFX.tension(false); closePanels(); busy = true; R && R.act(2); const line = bow ? LINES.deal : LINES.noDeal;
   if (bow) { SFX.stinger("deal"); SFX.applause(2.8); } else SFX.stinger("nodeal");
-  speakLines([line], null);
+  speakLines(splitSentences(line), null);
   const done = () => { busy = false; showDone(text); };
   R ? R.exit(bow, done) : setTimeout(done, 1500);
 }
@@ -1098,7 +1156,7 @@ function reset() {
 }
 $("btn-reset").addEventListener("click", reset); $("btn-reset-2").addEventListener("click", reset);
 $("btn-start").addEventListener("click", () => {
-  audio(); ambience(S.sfx); try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
+  ctx(); audio(); ambience(S.sfx); try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
   S.started = true; save(); busy = true; $("btn-start").hidden = true;
   const go = () => { busy = false; $("bottom").hidden = false; present(PITCH.hook, null, false, null, () => later2(500, act2)); };
   R ? R.entrance(go) : go();
@@ -1110,8 +1168,8 @@ document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click"
 $("cap-on").addEventListener("change", e => { S.captions = e.target.checked; save(); if (!S.captions) Captions.clear(); });
 $("voice-on").addEventListener("change", e => { S.voice = e.target.checked; save(); if (!S.voice) Voice.stop(); });
 $("sfx-on").addEventListener("change", e => { S.sfx = e.target.checked; save(); ambience(S.sfx && S.started); });
-$("voice-pick").addEventListener("change", e => { Voice.pick(e.target.value); Voice.say(["Rex Voltaire, at your service."]); });
-$("voice-test").addEventListener("click", () => Voice.say(["Good evening, shark. This is how I'll sound for every answer tonight."]));
+$("voice-pick").addEventListener("change", e => { Voice.pick(e.target.value); Voice.say([LINES.pick]); });
+$("voice-test").addEventListener("click", () => Voice.say(splitSentences(LINES.test)));
 const deskBoxes = [...document.querySelectorAll("#deskgrid input")];
 deskBoxes.forEach(b => { b.checked = S.desk.includes(b.value); b.addEventListener("change", () => { S.desk = deskBoxes.filter(x => x.checked).map(x => x.value); save(); R && R.setDesk(S.desk); }); });
 $("open-info").addEventListener("click", () => openPanel("m-info"));

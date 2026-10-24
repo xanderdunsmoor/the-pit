@@ -5,3 +5,4 @@ artifact/
 private-assets/
 *.fbx
 public/models/rex.json
+preview/
