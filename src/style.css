@@ -113,3 +113,17 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .scrim:not([hidden]), .scrim:not([hidden]) > .panel, .subs:not([hidden]), .toast:not([hidden]) { animation: none; } #veil { transition: none; } }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
+
+/* portfolio cash chip, suggestion chips, holdings */
+.cashchip { font: 600 13px var(--body); color: var(--ink); background: var(--glass-2); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; letter-spacing: .02em; }
+.cashchip:hover { border-color: var(--accent); }
+.suggest { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+.sugg { font: 500 13px var(--body); color: var(--ink); background: var(--glass-2); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+.sugg:hover { border-color: var(--accent); }
+.pf-sum { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pf-sum div, .hold { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.pf-sum span, .hold span, .hold small { color: var(--muted); }
+.hold small { display: block; font-size: 12px; margin-top: 2px; }
+.hold > div { flex: 1; min-width: 0; }
+#pf-body { display: grid; gap: 10px; }
+.pf-note, #tx-src { font-size: 12px; color: var(--muted); }

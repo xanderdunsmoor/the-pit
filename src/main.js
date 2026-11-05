@@ -10,7 +10,8 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { VignetteShader } from "three/addons/shaders/VignetteShader.js";
 import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
-import { SRC_Q, SRC_K, GLOSSARY, PITCH, REACT, CHALLENGE, POSITIVE, LINES, glossaryLine, cardLine, splitSentences, plain, forSpeech, lineId } from "./content.js";
+import { interpret } from "./matcher.js";
+import { VERIFIED, SRC_Q, SRC_K, GLOSSARY, PITCH, REACT, CHALLENGE, POSITIVE, LINES, glossaryLine, cardLine, splitSentences, plain, forSpeech, lineId } from "./content.js";
 
 (async () => {
 'use strict';
@@ -40,34 +41,9 @@ async function preload() {
 await preload();
 const DBG = []; const dbg = m => { DBG.push(String(m)); if (location.hash === '#debug') { let d = document.getElementById('dbg'); if (!d) { d = document.createElement('pre'); d.id = 'dbg'; d.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;max-width:60vw;white-space:pre-wrap;background:#000c;color:#0f0;font:11px monospace;padding:6px;pointer-events:none'; document.body.appendChild(d); } d.textContent = DBG.join('\n'); } };
 addEventListener('error', e => dbg('ERR ' + e.message));
-// ================= FREE-TEXT MATCHING (prepared answers only) =================
-const KEYWORDS = {
-  sell: [["what do you sell", 4], ["what does nvidia do", 4], ["what do you do", 4], ["you do", 3], ["you guys do", 4], ["does the company do", 4], ["what do you make", 4], ["business", 2], ["product", 2], ["sell", 2], ["make", 1], ["chip", 2], ["gpu", 2], ["data center", 2], ["datacenter", 2], ["hyperscal", 2], ["segment", 2], ["market", 1], ["gaming", 2], ["what is nvidia", 4], ["who are you", 2], ["ai", 1]],
-  growth: [["grow", 3], ["growth", 3], ["fast", 2], ["trend", 2], ["increase", 2], ["last year", 2], ["history", 2], ["sales", 1], ["revenue", 1], ["bigger", 2], ["double", 2], ["year over year", 3]],
-  profit: [["profit", 3], ["profitable", 4], ["margin", 3], ["earn", 2], ["earnings", 3], ["eps", 3], ["net income", 4], ["make money", 3], ["making money", 3], ["money", 1], ["bottom line", 3], ["income", 2]],
-  debt: [["debt", 4], ["borrow", 3], ["loan", 3], ["owe", 2], ["liabilit", 3], ["balance sheet", 3], ["bond", 3], ["leverage", 3], ["cash on hand", 3], ["cash in the bank", 3], ["equity", 2], ["notes", 1]],
-  spend: [["spend", 3], ["spending", 3], ["r&d", 4], ["r and d", 4], ["research", 3], ["buyback", 4], ["buy back", 4], ["repurchas", 4], ["expense", 3], ["cost", 2], ["where does your money go", 4], ["invest in", 2]],
-  customers: [["customer", 4], ["who buys", 4], ["buyer", 3], ["client", 3], ["china", 3], ["concentrat", 3], ["depend", 2], ["international", 2], ["overseas", 2], ["who pays", 3], ["receivable", 3]],
-  cash: [["cash flow", 5], ["cashflow", 5], ["real cash", 4], ["real money", 3], ["paper", 2], ["operating cash", 5], ["generate", 2], ["cash", 1]],
-  risk: [["risk", 4], ["wrong", 4], ["downside", 4], ["worry", 3], ["concern", 3], ["problem", 3], ["danger", 3], ["bear case", 4], ["catch", 2], ["weakness", 3], ["tariff", 3], ["inventory", 3], ["competition", 2], ["compet", 2], ["threat", 3], ["bad", 2], ["fail", 2], ["scared", 2]]
-};
-const SIMPLER = /(simpl|don'?t (get|understand)|confus|eli5|plain english|in english|dumb it down|easier|what does that mean|lost me|explain (that|it|again)|i'?m (new|a beginner))/i;
-const ADVICE = /(should i (buy|invest|sell|get)|is (it|this|nvidia|nvda) a (good|bad) (buy|investment|stock)|worth (buying|investing)|will (it|the stock|nvda|nvidia|the price) (go|rise|fall|drop)|price target|buy or sell|good investment|how much should i|recommend)/i;
-const DEFINE = /(what(?:'s| is| are| does)|define|meaning of|explain)\s+(?:a |an |the )?([a-z&\- ]{2,40}?)(?:\s+mean)?\??$/i;
-function matchQuestion(text) {
-  const t = " " + text.toLowerCase().replace(/[^a-z0-9&\s']/g, " ").replace(/\s+/g, " ") + " ";
-  let best = null, bestScore = 0;
-  for (const [id, list] of Object.entries(KEYWORDS)) { let s = 0; for (const [k, w] of list) if (t.includes(k.length <= 3 ? " " + k + " " : k)) s += w; if (s > bestScore) { bestScore = s; best = id; } }
-  return bestScore >= 2 ? PITCH.questions.find(q => q.id === best) : null;
-}
-function glossaryHit(text) {
-  const m = text.trim().match(DEFINE); const cand = m ? m[2].toLowerCase().trim() : text.toLowerCase(); const keys = Object.keys(GLOSSARY);
-  return keys.find(k => cand === k || cand === k + "s" || cand.replace(/s$/, "") === k) || (m ? keys.find(k => cand.includes(k)) : null) || null;
-}
-
 // ================= STATE =================
 const KEY = "thepit.proto.v4", START = 1000000;
-const blank = () => ({ desk: ["water", "notepad"], captions: false, gate: false, studio: "classic", voice: true, sfx: true, voiceURI: "", asked: [], notes: [], offers: [], skipped: false, decided: null, started: false });
+const blank = () => ({ desk: ["water", "notepad"], captions: false, gate: false, studio: "classic", voice: true, sfx: true, voiceURI: "", asked: [], notes: [], offers: [], done: [], skipped: false, decided: null, started: false });
 let S = blank();
 try { const raw = localStorage.getItem(KEY); if (raw) S = Object.assign(blank(), JSON.parse(raw)); } catch (e) {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
@@ -717,7 +693,7 @@ function initGL(hooks) {
         g.fillStyle = "#1a1f28"; g.fillRect(trackX, y - 18, trackW, 36);
         if (lit) { g.shadowColor = acc; g.shadowBlur = 28; }
         g.fillStyle = hi || lit ? acc : "#5b6676"; g.fillRect(trackX, y - 18, trackW * val / max * k, 36); g.shadowBlur = 0;
-        const shown = val * k; g.fillStyle = "#ffffff"; g.font = "700 36px 'Lexend', sans-serif"; g.fillText(v.unit === "%" ? Math.round(shown) + "%" : fmtB(shown), trackX + trackW + 20, y + 12);
+        const shown = val * k; g.fillStyle = "#ffffff"; g.font = "700 36px 'Lexend', sans-serif"; g.fillText(v.unit === "%" ? (Number.isInteger(val) ? Math.round(shown) : shown.toFixed(1)) + "%" : fmtB(shown), trackX + trackW + 20, y + 12);
       });
     } else {
       v.items.forEach((t, i) => { const y = 230 + i * 104; const show = bp * v.items.length > i * .8; if (!show) return; const lit = sc.hl === i; if (lit) { g.fillStyle = "rgba(242,153,74,.14)"; g.fillRect(40, y - 52, w - 80, 76); } g.fillStyle = "#f2994a"; g.fillRect(56, y - 34, 44, 44); g.fillStyle = "#1a0f02"; g.font = "800 34px 'Lexend', sans-serif"; g.fillText("!", 71, y); g.fillStyle = lit ? "#ffffff" : "#c9d1da"; g.font = (lit ? "700" : "400") + " 38px 'Lexend', sans-serif"; g.fillText(t, 124, y); });
@@ -729,11 +705,11 @@ function initGL(hooks) {
     if (mode === "reveal") sc.revealStart = now(); if (mode === "visual") { sc.buildStart = now(); sc.hl = -1; }
     drawScreen(); screenTex.needsUpdate = true;
     const v = sc.visual;
-    $("screen-sr").textContent = mode === "visual" && v ? "On screen: " + v.title + ". " + (v.type === "bars" ? v.items.map(i => i[0] + " " + (v.unit === "%" ? i[1] + "%" : fmtB(i[1]))).join(", ") : v.items.join("; ")) : "";
+    $("screen-sr").textContent = mode === "visual" && v ? "On screen: " + v.title + ". " + (v.type === "bars" ? v.items.map(i => i[0] + " " + (v.unit === "%" ? (Number.isInteger(i[1]) ? i[1] : i[1].toFixed(1)) + "%" : fmtB(i[1]))).join(", ") : v.items.join("; ")) : "";
   }
   function highlightFor(sentence) {
     const v = sc.visual; if (!v || sc.mode !== "visual") return; let idx = -1;
-    if (v.type === "bars") v.items.forEach(([, val], i) => { const tokn = v.unit === "%" ? val + "%" : val.toFixed(1); if (idx < 0 && sentence.includes(tokn)) idx = i; });
+    if (v.type === "bars") v.items.forEach(([, val], i) => { const tokn = v.unit === "%" ? (Number.isInteger(val) ? val : val.toFixed(1)) + "%" : val.toFixed(1); if (idx < 0 && sentence.includes(tokn)) idx = i; });
     else { const m = sentence.match(/^(One|Two|Three|Four)\b/); if (m) idx = ["One", "Two", "Three", "Four"].indexOf(m[1]); }
     if (idx !== sc.hl) { sc.hl = idx; drawScreen(); screenTex.needsUpdate = true; }
   }
@@ -973,9 +949,9 @@ function initGL(hooks) {
         else { st.away = true; later(item.card ? 1200 : 0, () => walkTo(SCREEN_SPOT.x, SCREEN_SPOT.z, 1500, () => { st.pointing = true; })); }
       } else setShot("rex", Math.random() < .5);
     },
-    finishAnswer() { shot.pushT = 1; later(1400, () => { if (Voice.talking) return; st.pointing = false; st.mood = "neutral"; setShot("mid"); if (st.away) { st.away = false; walkTo(MARK.x, MARK.z, 1500); } }); },
+    finishAnswer() { shot.pushT = 1; later(1400, () => { if (Voice.talking || st.exiting) return; st.pointing = false; st.mood = "neutral"; setShot("mid"); if (st.away) { st.away = false; walkTo(MARK.x, MARK.z, 1500); } }); },
     entrance(onReady) {
-      clearLater(); tweens.length = 0; st.pointing = false; st.away = false; st.mood = "neutral"; st.walk = null; setShot("wide");
+      clearLater(); tweens.length = 0; st.pointing = false; st.away = false; st.exiting = false; st.mood = "neutral"; st.walk = null; setShot("wide");
       rex.position.set(DOOR_X, 0, DOOR_Z - 1.6); J.yaw.x = J.yaw.t = 0; st.sil = 1; st.bow = 0; doors(false, 1);
       backLight.intensity = 0; doorSpill.intensity = 0; glowMat.color.setScalar(0);
       if (reduced) { rex.position.set(MARK.x, 0, MARK.z); st.sil = 0; lighting("show", 10); setScreen("reveal"); later(300, onReady); return; }
@@ -988,10 +964,10 @@ function initGL(hooks) {
       later(5600, () => setShot("mid"));
       later(MODEL.ready ? 8000 : 6600, onReady);
     },
-    place() { rex.position.set(MARK.x, 0, MARK.z); st.sil = 0; setShot("mid"); },
-    hide() { clearLater(); tweens.length = 0; st.walk = null; rex.position.set(DOOR_X, 0, DOOR_Z - 1.6); st.sil = 1; st.pointing = false; st.away = false; st.mood = "neutral"; doors(false, 1); lighting("show", 10); setShot("wide"); },
+    place() { rex.position.set(MARK.x, 0, MARK.z); st.sil = 0; st.exiting = false; setShot("mid"); },
+    hide() { clearLater(); tweens.length = 0; st.walk = null; st.exiting = false; rex.position.set(DOOR_X, 0, DOOR_Z - 1.6); st.sil = 1; st.pointing = false; st.away = false; st.mood = "neutral"; doors(false, 1); lighting("show", 10); setShot("wide"); },
     exit(bow, onGone) {
-      clearLater(); st.pointing = false; st.listen = false; st.mood = "neutral"; setShot("wide");
+      clearLater(); st.pointing = false; st.listen = false; st.away = false; st.exiting = true; st.mood = "neutral"; setShot("wide");
       const go = () => { glowMat.color.setHex(THEMES[S.studio].backlight).multiplyScalar(3); tween(backLight, "intensity", 12, 500); doors(true, 900); walkTo(DOOR_X, DOOR_Z - 1.6, 3200, () => { doors(false, 900); tween(backLight, "intensity", 0, 900); later(900, () => glowMat.color.setScalar(0)); onGone && onGone(); }); };
       if (MODEL.ready && !reduced) { let went = false; const g2 = () => { if (!went) { went = true; go(); } }; st.mood = bow ? "confident" : "neutral"; onceClip(bow ? "Victory" : "Defeat", () => later(250, g2)); later(5200, g2); }
       else if (bow && !reduced) { st.mood = "confident"; tween(st, "bow", .45, 400); later(700, () => tween(st, "bow", 0, 400)); later(1300, go); } else go();
@@ -1000,7 +976,7 @@ function initGL(hooks) {
 }
 
 // ================= UI plumbing =================
-const PANELS = ["m-decide", "m-transcript", "m-info", "m-settings", "m-notes", "m-chart"];
+const PANELS = ["m-decide", "m-transcript", "m-info", "m-settings", "m-notes", "m-chart", "m-portfolio"];
 function openPanel(id) { PANELS.forEach(p => { if (p !== id) { $(p).hidden = true; $(p).classList.remove("closing"); } }); $(id).classList.remove("closing"); $(id).hidden = false; const f = $(id).querySelector(".close, input:not([type=checkbox]), button.btn"); f && f.focus(); }
 function closePanels() { if (!$("m-decide").hidden && !S.decided) { SFX.tension(false); R && R.act(2); } PANELS.forEach(id => { const el = $(id); if (el.hidden || el.classList.contains("closing")) return; el.classList.add("closing"); setTimeout(() => { el.hidden = true; el.classList.remove("closing"); }, 180); }); }
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closePanels));
@@ -1052,7 +1028,8 @@ function present(item, typed, simple, reaction, onDone) {
   const raw = splitSentences(text); if (reaction) raw.unshift(reaction);
   current = { item, raw };
   $("tx-title").textContent = item.q; $("tx-body").innerHTML = raw.map((p, i) => `<span class="sent" data-i="${i}">${tokenize(p).map(renderTok).join(" ")}</span>`).join(" ");
-  $("tx-src").innerHTML = item.src ? "Source: " + item.src.map(s => `<a href="${s.url}" target="_blank" rel="noopener">${s.label}</a>`).join(" · ") : "";
+  $("tx-src").innerHTML = item.src ? `<b>Sources</b> (verified ${VERIFIED}): ` + item.src.map(s => `<a href="${s.url}" target="_blank" rel="noopener">NVIDIA ${s.label}</a>${s.section ? `, ${esc(s.section)}` : ""}`).join("; ")
+    + (item.calc ? `<br><b>Our calculations from reported figures:</b> ${item.calc.map(esc).join("; ")}` : "") : "";
   if (R && item.visual) R.setScreen("visual", item.visual, item.src[0].label);
   R && R.perform(item);
   if (item.card && item.id !== "hook") addNote(item);
@@ -1076,20 +1053,28 @@ $("ask-form").addEventListener("submit", e => { e.preventDefault(); ask($("ask-i
 // Act 2 opens with Rex asking you something; mid-grilling he flips it back on you
 function act2() { if (busy || S.decided || S.skipped) return; SFX.stinger("act2"); R && R.act(2); later2(800, () => { if (busy) return; pending = "goodbad"; sayLine(LINES.goodBad); }); }
 function maybeWorry() { if (worryAsked || S.asked.length < 3) return; worryAsked = true; later2(1300, () => { if (Voice.talking || busy || S.decided) return; pending = "worry"; sayLine(LINES.worry); }); }
+// suggestion chips: shown when Rex needs you to pick, or a question is outside what he prepared
+function suggest(list) {
+  const box = $("suggest"); if (!list || !list.length) { box.hidden = true; box.innerHTML = ""; return; }
+  box.innerHTML = list.map(q => `<button type="button" class="sugg" data-id="${q.id}">${esc(q.q)}</button>`).join(""); box.hidden = false;
+}
+$("suggest").addEventListener("click", e => { const b = e.target.closest(".sugg"); if (!b) return; const q = PITCH.questions.find(x => x.id === b.dataset.id); suggest(null); if (q && !busy) { mark(q); present(q, q.q, false, null, maybeWorry); } });
+const unasked = () => PITCH.questions.filter(q => !S.asked.includes(q.id));
 function ask(typed) {
   if (busy) return; if (!typed) { $("ask-input").focus(); return; }
-  $("ask-input").value = ""; R && R.listen(false);
+  $("ask-input").value = ""; R && R.listen(false); suggest(null);
   const p = pending; pending = null;
   if (p === "goodbad") {
     if (/\b(bad|worst|negative|downside|risks?|ugly)\b/i.test(typed)) { const q = PITCH.questions.find(x => x.id === "risk"); mark(q); present(q, typed, false, LINES.badFirst, maybeWorry); return; }
     if (/\b(good|best|positive|upside|great)\b/i.test(typed)) { const q = PITCH.questions.find(x => x.id === (S.asked.includes("growth") ? "profit" : "growth")); mark(q); present(q, typed, false, LINES.goodFirst, maybeWorry); return; }
   }
-  if (ADVICE.test(typed)) { sayLine(LINES.advice); return; }
-  const q = matchQuestion(typed); const mentionsCo = /\b(you|your|nvidia|nvda|company|they|their)\b/i.test(typed); const term = glossaryHit(typed);
-  if (term && (!q || !mentionsCo) && !SIMPLER.test(typed)) { sayLine(glossaryLine(term)); return; }
-  if (SIMPLER.test(typed)) { const target = q || (current && current.item.simple ? current.item : null); if (target && target.simple) { mark(target); present(target, typed, true); return; } }
-  if (q) { mark(q); present(q, typed, false, reactionFor(typed), maybeWorry); return; }
-  sayLine(LINES.outside);
+  const r = interpret(typed);
+  if (r.kind === "advice") { sayLine(LINES.advice); return; }
+  if (r.kind === "define") { sayLine(glossaryLine(r.term)); return; }
+  if (r.kind === "simpler" || r.kind === "follow") { const target = r.q || (current && current.item.simple ? current.item : null); if (target && target.simple) { mark(target); present(target, typed, true); return; } }
+  if (r.kind === "answer") { mark(r.q); present(r.q, typed, false, reactionFor(typed), maybeWorry); return; }
+  if (r.kind === "clarify") { sayLine(LINES.clarify); suggest(r.options); return; }
+  sayLine(LINES.outside); suggest(unasked().slice(0, 3));
 }
 function mark(q) { if (q.id && !S.asked.includes(q.id)) { S.asked.push(q.id); save(); } updateDecide(); }
 function updateDecide() { $("btn-decide").classList.toggle("locked", !S.asked.includes("risk")); }
@@ -1124,7 +1109,7 @@ $("offer-form").addEventListener("submit", e => {
   const amt = Number(($("offer-amount").value || "").replace(/[^\d.]/g, "")); const avail = START - committed();
   if (!amt || amt <= 0) { msg.textContent = "Enter an amount, for example 250,000."; return; }
   if (amt > avail) { msg.textContent = `You have ${fmtUSD(avail)} left.`; return; }
-  S.offers.push({ ticker: PITCH.ticker, amount: Math.round(amt), reason: $("offer-reason").value.trim() });
+  S.offers.push({ ticker: PITCH.ticker, company: PITCH.company, amount: Math.round(amt), reason: $("offer-reason").value.trim(), date: new Date().toLocaleDateString("en-CA") }); updateCash();
   S.decided = "in"; save(); $("offer-amount").value = ""; $("offer-reason").value = "";
   wrapUp(`You're in on NVIDIA for ${fmtUSD(amt)} of play money.`, true);
 });
@@ -1133,27 +1118,46 @@ function wrapUp(text, bow) {
   SFX.tension(false); closePanels(); busy = true; R && R.act(2); const line = bow ? LINES.deal : LINES.noDeal;
   if (bow) { SFX.stinger("deal"); SFX.applause(2.8); } else SFX.stinger("nodeal");
   speakLines(splitSentences(line), null);
-  const done = () => { busy = false; showDone(text); };
+  const done = () => nextPitch(text);
   R ? R.exit(bow, done) : setTimeout(done, 1500);
 }
+// ----- lineup: after each decision the pitcher leaves and the next company comes in; passed companies are gone for the session -----
+const LINEUP = [PITCH];
+function nextPitch(text) {
+  if (!S.done.includes(PITCH.ticker)) S.done.push(PITCH.ticker); save();
+  const next = LINEUP.find(c => !S.done.includes(c.ticker));
+  R && R.setScreen("standby");
+  if (next) { /* a second company plugs in here in Phase 2 */ }
+  later2(1600, () => { R && R.setScreen("idle", null, ""); busy = false; showDone(text); });
+}
 function showDone(text) {
-  $("done-title").textContent = S.skipped ? "You skipped Rex" : "That's the show";
+  $("done-title").textContent = "That's tonight's lineup";
   $("done-text").textContent = text;
-  $("done-pos").innerHTML = S.offers.map(o => `<div class="pos"><span>${o.ticker}</span><b>${fmtUSD(o.amount)}</b></div>`).join("");
+  $("done-pos").innerHTML = portfolioHTML(false);
   $("m-done").hidden = false; $("bottom").hidden = true; Captions.clear();
 }
 $("btn-skip").addEventListener("click", () => {
   if (busy) return; S.skipped = true; save(); Voice.stop(); Captions.clear(); busy = true; closePanels();
-  const done = () => { busy = false; showDone("Skipped pitchers are gone until you run it again."); };
+  const done = () => nextPitch("You passed on NVIDIA. Skipped companies are gone for this session.");
   R ? R.exit(false, done) : done();
 });
 function reset() {
   const keep = { desk: S.desk, captions: S.captions, gate: S.gate, studio: S.studio, voice: S.voice, sfx: S.sfx, voiceURI: S.voiceURI, offers: S.offers };
+  suggest(null);
   S = Object.assign(blank(), keep); save(); Voice.stop(); Captions.clear(); clearLater(); busy = false; current = null; pending = null; worryAsked = false; SFX.tension(false); closePanels();
   $("m-done").hidden = true; $("bottom").hidden = true; $("btn-start").hidden = false;
   if (R) { R.hide(); R.setScreen("idle", null, ""); R.drawNotes(); }
   updateDecide();
 }
+// ----- portfolio: cash, holdings, your reasons; selling returns the amount invested until licensed prices are connected -----
+function updateCash() { $("open-portfolio").textContent = fmtUSD(START - committed()); }
+function portfolioHTML(withSell) {
+  const rows = S.offers.map((o, i) => `<div class="hold"><div><b>${esc(o.company || o.ticker)}</b> <span>${esc(o.ticker)}</span><small>${o.date ? "Invested " + esc(o.date) : ""}${o.reason ? " · “" + esc(o.reason) + "”" : ""}</small></div><b>${fmtUSD(o.amount)}</b>${withSell ? `<button class="btn" type="button" data-sell="${i}">Sell</button>` : ""}</div>`).join("");
+  return `<div class="pf-sum"><div><span>Cash</span><b>${fmtUSD(START - committed())}</b></div><div><span>Invested</span><b>${fmtUSD(committed())}</b></div></div>` + (rows || `<p>No holdings yet.</p>`);
+}
+function openPortfolio() { $("pf-body").innerHTML = portfolioHTML(true); openPanel("m-portfolio"); }
+$("open-portfolio").addEventListener("click", openPortfolio);
+$("pf-body").addEventListener("click", e => { const b = e.target.closest("[data-sell]"); if (!b) return; const o = S.offers.splice(Number(b.dataset.sell), 1)[0]; save(); updateCash(); $("pf-body").innerHTML = portfolioHTML(true); toast(`Sold ${o.ticker}. ${fmtUSD(o.amount)} back to cash.`); });
 $("btn-reset").addEventListener("click", reset); $("btn-reset-2").addEventListener("click", reset);
 $("btn-start").addEventListener("click", () => {
   ctx(); audio(); ambience(S.sfx); try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
@@ -1179,9 +1183,9 @@ $("gate-enter").addEventListener("click", () => { S.gate = true; save(); $("m-ga
 
 // init
 $("cap-on").checked = S.captions; $("voice-on").checked = S.voice; $("sfx-on").checked = S.sfx; $("m-gate").hidden = !!S.gate;
-setStudio(S.studio); R && R.setDesk(S.desk); updateDecide();
+setStudio(S.studio); R && R.setDesk(S.desk); updateDecide(); updateCash();
 if (S.started && !S.skipped && !S.decided) { $("btn-start").hidden = true; $("bottom").hidden = false; R && R.place(); R && R.setScreen("reveal"); }
-else if (S.decided || S.skipped) { S.started = false; S.skipped = false; S.decided = null; S.asked = []; S.notes = []; save(); updateDecide(); }
+else if (S.decided || S.skipped) { S.started = false; S.skipped = false; S.decided = null; S.asked = []; S.notes = []; S.done = []; save(); updateDecide(); }
 addEventListener("pointerdown", () => { if (S.started && S.sfx) { audio(); ambience(true); } }, { once: true });
 Voice.init();
 })();

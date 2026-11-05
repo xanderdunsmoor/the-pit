@@ -14,6 +14,7 @@
 <div class="stage" id="stage" aria-label="The Pit studio">
   <div class="hud">
     <div class="topbar">
+      <button class="cashchip" id="open-portfolio" type="button" aria-label="Portfolio: cash available">$1,000,000</button>
       <span class="chip-ai" title="Rex is a fictional AI character">AI character</span>
       <button class="icon" id="open-info" aria-label="About, disclaimers and sources"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
       <button class="icon" id="open-settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
@@ -21,6 +22,7 @@
     <div class="middle"><button class="go" id="btn-start">Let them in</button></div>
     <div class="bottom" id="bottom" hidden>
       <div class="subs" id="subs" hidden aria-live="polite"><div class="subs-line" id="sub-line"></div></div>
+      <div class="suggest" id="suggest" hidden></div>
       <form class="askbar" id="ask-form" novalidate>
         <button class="icon" type="button" id="btn-replay" aria-label="Replay Rex's last answer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
         <button class="icon" type="button" id="btn-transcript" aria-label="Read Rex's full answer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 6h14M5 10h14M5 14h10M5 18h7"/></svg></button>
@@ -66,6 +68,14 @@
       <h2 id="done-title">That's the show</h2>
       <p id="done-text"></p><div id="done-pos"></div>
       <div class="row"><button class="btn primary" id="btn-reset-2">Run it again</button></div>
+    </div>
+  </div>
+
+  <div class="scrim" id="m-portfolio" hidden>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="pf-title">
+      <div class="phead"><h2 id="pf-title">Portfolio</h2><button class="close" type="button" data-close aria-label="Close">×</button></div>
+      <div id="pf-body"></div>
+      <p class="pf-note">Play money only. Market prices aren't connected yet, so holdings show what you invested and selling returns that amount.</p>
     </div>
   </div>
 

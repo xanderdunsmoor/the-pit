@@ -11,8 +11,14 @@ def speak(t):
     for a, b in SAY: t = re.sub(a, b, t)
     return t
 FPS = 50
-index = {}
+import os
+old = json.load(open('public/voice/index.json'))['lines'] if os.path.exists('public/voice/index.json') else {}
+keep = {lid for lid, _ in lines}
+index = {k: v for k, v in old.items() if k in keep}
+for f in os.listdir('public/voice'):
+    if f.endswith('.mp3') and f[:-4] not in keep: os.remove('public/voice/' + f)   # drop lines Rex no longer says
 for i, (lid, text) in enumerate(lines):
+    if lid in index and os.path.exists(f'public/voice/{lid}.mp3'): continue      # already rendered
     audio, sr = k.create(speak(text), voice=VOICE, speed=.95, lang='en-us')
     audio = audio / max(1e-6, np.abs(audio).max()) * .89
     # trim silence at the edges but keep a tiny breath
