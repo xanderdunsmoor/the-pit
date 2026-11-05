@@ -347,9 +347,9 @@ function initGL(hooks) {
     for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(mesh.matrixWorld); n.fromBufferAttribute(N, i).applyMatrix3(nm); const ax = Math.abs(n.x) > Math.abs(n.y) ? (Math.abs(n.x) > Math.abs(n.z) ? 0 : 2) : (Math.abs(n.y) > Math.abs(n.z) ? 1 : 2); const [a, b] = ax === 0 ? [v.z, v.y] : ax === 1 ? [v.x, v.z] : [v.x, v.y]; uv[i * 2] = a / size; uv[i * 2 + 1] = b / size; }
     g.setAttribute("uv", new THREE.BufferAttribute(uv, 2)); }
   const M_LIVE = {
-    walnut: new THREE.MeshPhysicalMaterial({ color: 0xa87452, map: tiled(TX.walnut_diff), normalMap: tiled(TX.walnut_nor_gl), roughnessMap: tiled(TX.walnut_rough), roughness: .5, clearcoat: .4, clearcoatRoughness: .2, envMapIntensity: .6 }),
+    walnut: new THREE.MeshPhysicalMaterial({ color: 0xa87452, map: tiled(TX.walnut_diff), normalMap: tiled(TX.walnut_nor_gl), roughnessMap: tiled(TX.walnut_rough), roughness: .66, clearcoat: .14, clearcoatRoughness: .3, specularIntensity: .35, envMapIntensity: .6 }),
     lacquer: new THREE.MeshStandardMaterial({ color: 0x0c0c0d, roughness: .28, metalness: 0, envMapIntensity: .8 }),
-    leather: new THREE.MeshStandardMaterial({ color: 0x4a1d1a, map: tiled(TX.leather_diff, 1), normalMap: tiled(TX.leather_nor_gl, 1), roughnessMap: tiled(TX.leather_rough, 1), roughness: .75, envMapIntensity: .35 }),
+    leather: new THREE.MeshPhysicalMaterial({ specularIntensity: .6, sheen: .3, sheenColor: new THREE.Color(0x8a5a48), sheenRoughness: .5, color: 0x4a1d1a, map: tiled(TX.leather_diff, 1), normalMap: tiled(TX.leather_nor_gl, 1), roughnessMap: tiled(TX.leather_rough, 1), roughness: .8, envMapIntensity: .3 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xb8925a, metalness: 1, roughness: .28, envMapIntensity: 1.1 })
   };
   if (ASSETS.room) new GLTFLoader().parse(ASSETS.room.slice(0), "", g => {
@@ -361,8 +361,28 @@ function initGL(hooks) {
       else if (/^Cove/.test(obj)) { o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .72, .42).multiplyScalar(3.2) }); o.material.userData.base = o.material.color.clone(); baked.push(o.material); }
       else { o.material = /^TableTop/.test(obj) ? M_LIVE.walnut : mn === "Leather" ? M_LIVE.leather : mn === "Brass" ? M_LIVE.brass : M_LIVE.lacquer; boxUV(o, /^TableTop/.test(obj) ? 2.4 : .6); o.castShadow = true; o.receiveShadow = true; }
     });
-    softenEnv();
+    softenEnv(); later(400, captureRoomEnv);
   }, e => dbg("room " + (e && e.message)));
+  /* reflections come from the room itself (walnut, brass, warm pendants), not a borrowed photo studio: one 256px capture at load */
+  function captureRoomEnv() {
+    try {
+      const crt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType }); const cc = new THREE.CubeCamera(.05, 30, crt); cc.position.set(0, 1.45, .45);
+      const hide = [rex, ...investors.map(i => i.holder)].filter(o => o.visible); hide.forEach(o => o.visible = false);
+      for (let i = 0; i < baked.length; i++) baked[i].color.copy(baked[i].userData.base);
+      cc.update(renderer, scene); hide.forEach(o => o.visible = true);
+      const old = scene.environment; scene.environment = pmrem.fromCubemap(crt.texture).texture; scene.environmentIntensity = 1.1; crt.dispose(); if (old && old !== scene.environment) old.dispose();
+    } catch (e) { dbg("env " + e.message); }
+  }
+  /* a framed abstract print on the right wall, lit by its own picture light (painted into the image, no real-time light) */
+  { const aw = 1.15, ah = .82, art = canvasTex(920, 656, (g, w, h) => {
+      g.fillStyle = "#cdbfa8"; g.fillRect(0, 0, w, h); const r = rnd(41);
+      const blobs = [["#1d2a3f", .38], ["#7a2e2a", .22], ["#b58a4a", .18], ["#3d4a3c", .12], ["#2a2224", .2]];
+      for (let i = 0; i < 70; i++) { const [c, a] = blobs[Math.floor(r() * blobs.length)]; g.globalAlpha = a * (.4 + r() * .6); g.fillStyle = c; g.beginPath(); const x = w * (.15 + r() * .7), y = h * (.12 + r() * .76), rw = 30 + r() * 170, rh = 12 + r() * 60; g.ellipse(x, y, rw, rh, (r() - .5) * .7, 0, Math.PI * 2); g.fill(); }
+      g.globalAlpha = 1; const lt = g.createLinearGradient(0, 0, 0, h); lt.addColorStop(0, "rgba(255,230,190,.10)"); lt.addColorStop(.45, "rgba(0,0,0,0)"); lt.addColorStop(1, "rgba(0,0,0,.45)"); g.fillStyle = lt; g.fillRect(0, 0, w, h); });
+    const ag = new THREE.Group(); ag.position.set(3.93, 1.62, -2.3); ag.rotation.y = -Math.PI / 2; room.add(ag);
+    const fr = std(0x1a1512, { roughness: .4 }); box(aw + .1, ah + .1, .04, fr, 0, 0, -.02, ag);
+    const mat = new THREE.Mesh(new THREE.PlaneGeometry(aw, ah), new THREE.MeshBasicMaterial({ map: art, color: new THREE.Color(.3, .27, .24) })); mat.position.z = .002; ag.add(mat); mat.material.userData.base = mat.material.color.clone(); baked.push(mat.material);
+    const bar = box(.5, .025, .05, M_LIVE.brass, 0, ah / 2 + .1, .06, ag); bar.castShadow = false; }
   // brass-and-glass pendants over the table: the warm points of light in the references
   const pendants = new THREE.Group(); scene.add(pendants); const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .78, .5).multiplyScalar(4) }); bulbMat.userData.base = bulbMat.color.clone(); baked.push(bulbMat);
   const globeMat = new THREE.MeshPhysicalMaterial({ color: 0xfff4e6, roughness: .08, metalness: 0, transparent: true, opacity: .22, envMapIntensity: 1.2, depthWrite: false });
@@ -387,7 +407,8 @@ function initGL(hooks) {
   const screenGlow = new THREE.PointLight(0x6fa8ff, 2.2, 7, 2); screenGlow.position.copy(SCREEN_POS).add(new THREE.Vector3(0, 0, -.12)); scene.add(screenGlow);
   // the screen is a real light source: a panel light the size of the screen falls on Rex and the floor
   RectAreaLightUniformsLib.init();
-  const screenLight = new THREE.RectAreaLight(0xbcd2ff, 0, scW, scH); screenLight.position.set(0, 0, .02); screenLight.rotation.y = Math.PI; screenGroup.add(screenLight);
+  window.__pit = {};
+  const screenLight = new THREE.RectAreaLight(0xbcd2ff, 0, scW, scH); screenLight.position.set(0, 0, .02); screenLight.rotation.y = Math.PI; screenGroup.add(screenLight); window.__pit.screenLight = screenLight;
   // LED pixel grid up close, glass reflections on top
   const ledTex = canvasTex(8, 8, g => { g.fillStyle = "#fff"; g.fillRect(0, 0, 8, 8); g.fillStyle = "#8a8a8a"; g.fillRect(0, 6, 8, 2); g.fillRect(6, 0, 2, 8); }); ledTex.colorSpace = THREE.NoColorSpace; ledTex.wrapS = ledTex.wrapT = THREE.RepeatWrapping; ledTex.repeat.set(560, 320);
   const led = new THREE.Mesh(new THREE.PlaneGeometry(scW, scH), new THREE.MeshBasicMaterial({ map: ledTex, blending: THREE.MultiplyBlending, premultipliedAlpha: true, transparent: true, depthWrite: false })); led.position.z = .002; screenGroup.add(led);
@@ -404,8 +425,8 @@ function initGL(hooks) {
   const SEATED = [["louise", -1.0, .05, 1], ["josh", 1.0, 1.25, -1], ["martha", -1.0, -1.15, 1]];
   /* table dressing: a closed leather folder, pen and water glass at each investor's place, a carafe mid-table. Lived-in, not staged-empty. */
   { const props = new THREE.Group(); scene.add(props);
-    const glassM = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: .16, roughness: .04, metalness: 0, clearcoat: 1, clearcoatRoughness: .03, envMapIntensity: 1.6, depthWrite: false, side: THREE.DoubleSide });
-    const waterM = new THREE.MeshPhysicalMaterial({ color: 0xbfd2d6, transparent: true, opacity: .22, roughness: .02, metalness: 0, envMapIntensity: 1.2, depthWrite: false });
+    const glassM = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: .08, roughness: .04, metalness: 0, clearcoat: .6, clearcoatRoughness: .03, envMapIntensity: .9, depthWrite: false, side: THREE.DoubleSide });
+    const waterM = new THREE.MeshPhysicalMaterial({ color: 0xbfd2d6, transparent: true, opacity: .12, roughness: .02, metalness: 0, envMapIntensity: 1.2, depthWrite: false });
     const penM = std(0x101012, { roughness: .3 });
     const glass = (x, z, h = .11, r = .033) => { const g = cyl(r, r * .88, h, glassM, x, TOP + h / 2, z, props, 20); g.castShadow = false; g.renderOrder = 2; const w = cyl(r * .9, r * .8, h * .55, waterM, x, TOP + h * .28, z, props, 20); w.castShadow = false; w.renderOrder = 2; };
     SEATED.forEach(([n, x, z, face], i) => { const px = x + face * .48, side = -face;
@@ -446,6 +467,7 @@ function initGL(hooks) {
   key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0002; key.shadow.normalBias = .02; key.shadow.radius = 3; key.shadow.camera.near = 1; key.shadow.camera.far = 12; scene.add(key, key.target);
   const fill = new THREE.DirectionalLight(0xffe6cc, .55); fill.position.set(-1, 2.5, 4); scene.add(fill);
   const rim = new THREE.SpotLight(0xe4ecff, 20, 16, .5, .8, 2); rim.position.set(.9, 3.3, -5.3); rim.target.position.set(MARK.x, 1.3, MARK.z); scene.add(rim, rim.target);
+  Object.assign(window.__pit, { scene, M_LIVE, key, rim, fill, hemi, ambL, renderer });
   const deskLamp = new THREE.PointLight(0xffd2a0, 1.1, 3, 2); deskLamp.position.set(0, 1.5, 2.6); scene.add(deskLamp);
   const canLights = []; const canMat = new THREE.MeshBasicMaterial({ color: 0 }); const CAN = new THREE.Color(0);
   const themeGroup = new THREE.Group(); scene.add(themeGroup); const strips = [], themeLights = [];
@@ -935,7 +957,7 @@ function initGL(hooks) {
 
     // lights
     screenLevel.cur += (screenLevel.t - screenLevel.cur) * k(2.2);
-    screenLight.intensity = screenLevel.cur * 1.1 * (1 - st.sil); screenGlow.intensity = 2.2 * (.35 + .65 * screenLevel.cur);
+    screenLight.intensity = screenLevel.cur * .7 * (1 - st.sil); screenGlow.intensity = 1.1 * (.35 + .65 * screenLevel.cur);
     floorGlow.material.color.setRGB(.16 * screenLevel.cur, .21 * screenLevel.cur, .32 * screenLevel.cur);
     for (let i = 0; i < beams.children.length - 1; i++) beams.children[i].visible = lightState.canCur > .2;
     beamMat.uniforms.opacity.value = lightState.canCur;
