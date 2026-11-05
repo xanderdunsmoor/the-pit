@@ -526,7 +526,7 @@ function initGL(hooks) {
       const modelMats = [];
       m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; const mm = o.material; mm.metalness = 0; mm.metalnessMap = null; mm.roughnessMap = null; mm.roughness = /hair|lash/i.test(o.name) ? .6 : .82; mm.envMapIntensity = .55; if (/hair|lash/i.test(o.name)) { mm.alphaTest = .45; mm.transparent = false; mm.side = THREE.DoubleSide; } if (!modelMats.includes(mm)) modelMats.push(mm); } });
       m.traverse(o => { if (o.isMesh && /Body/.test(o.name) && /Ch33_body/i.test(o.material.name)) { const src = o.material; o.material = skinMaterial(src); }
-        if (o.isMesh && /hair|lash/i.test(o.name)) o.material.alphaToCoverage = true; });
+        if (o.isMesh && /hair|lash/i.test(o.name)) o.material = hairMaterial(o.material); });
       const B = n => m.getObjectByName(n);
       // face controls baked in Blender (tools/blender/face_rig.py): shape keys on the head, eye bones for gaze
       const face = []; m.traverse(o => { if (o.isMesh && o.morphTargetDictionary) face.push(o); });
@@ -656,7 +656,9 @@ function initGL(hooks) {
     new GLTFLoader().parse(buf.buffer, "", g => {
       const m = g.scene; m.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(m); const s = 1.72 / Math.max(.01, bb.max.y - bb.min.y); m.scale.multiplyScalar(s);
       const holder = new THREE.Group(); holder.position.set(x - face * .04, 0, z); holder.rotation.y = face * Math.PI / 2; holder.add(m); scene.add(holder);
-      m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; o.material.metalness = 0; o.material.metalnessMap = null; o.material.roughnessMap = null; o.material.roughness = .85; o.material.envMapIntensity = .45; if (/hair|lash/i.test(o.name)) { o.material.alphaTest = .45; o.material.transparent = false; o.material.side = THREE.DoubleSide; } } });
+      m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; o.material.metalness = 0; o.material.metalnessMap = null; o.material.roughnessMap = null; o.material.roughness = .85; o.material.envMapIntensity = .45; } });
+      m.traverse(o => { if (!o.isMesh) return; if (/Body/.test(o.name) && /_body$/i.test(o.material.name)) o.material = skinMaterial(o.material); else if (/hair|lash/i.test(o.name)) o.material = hairMaterial(o.material);
+        if (!o.material.userData.dim) { o.material.color.multiplyScalar(.88); o.material.userData.dim = true; } });
       const mixer = new THREE.AnimationMixer(m); const clip = g.animations[0]; if (clip) { const a = mixer.clipAction(clip); a.play(); a.time = (idx * 3.7) % clip.duration; a.timeScale = .9 + idx * .07; }
       investors.push({ mixer, head: m.getObjectByName("Head"), holder, look: 0, next: now() + 4000 + idx * 2500, want: 0 });
     }, e => dbg("investor " + (e && e.message)));
@@ -821,6 +823,14 @@ function initGL(hooks) {
           "float wN = dot( geometryNormal, directLight.direction ); vec3 wrapL = vec3( saturate( ( wN + .28 ) / 1.28 ), saturate( ( wN + .1 ) / 1.1 ), saturate( ( wN + .07 ) / 1.07 ) ); reflectedLight.directDiffuse += wrapL * wrapL * directLight.color * BRDF_Lambert( material.diffuseContribution );"));
     };
     return mat;
+  }
+  /* hair cards: soft strand edges, a highlight that runs along the strands (not a plastic blob), warm sheen where light grazes it */
+  const hairCache = new Map();
+  function hairMaterial(src) {
+    if (hairCache.has(src)) return hairCache.get(src);
+    const mat = new THREE.MeshPhysicalMaterial({ map: src.map, normalMap: src.normalMap, color: src.color, alphaTest: .3, alphaToCoverage: true, transparent: false, side: THREE.DoubleSide, roughness: .48, metalness: 0,
+      specularIntensity: .45, sheen: .45, sheenColor: new THREE.Color(0x7a5a44), sheenRoughness: .35, envMapIntensity: .35 });
+    mat.name = src.name + "_hair"; hairCache.set(src, mat); return mat;
   }
   function softenEnv() { scene.traverse(o => { if (o.material && o.material.isMeshStandardMaterial && !o.material.userData.envSet) { if (!(o.material.envMapIntensity < 1)) o.material.envMapIntensity = o.material.metalness > .5 ? 1 : .5; o.material.userData.envSet = true; } }); }
 
