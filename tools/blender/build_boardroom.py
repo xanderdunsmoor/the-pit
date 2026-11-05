@@ -47,11 +47,12 @@ def tile_uv(o, size):
     bm.to_mesh(me); bm.free()
 
 walnut_dark, black, gold, leather = mat("Panel", (.035, .03, .028)), mat("Lacquer", (.012, .012, .014)), mat("Brass", (.55, .42, .2)), mat("Leather", (.02, .018, .018))
-floor_m, ceil_m, cove_m = mat("Floor", (.09, .06, .04)), mat("Ceiling", (.06, .055, .05)), mat("Cove", (1, .72, .42), emit=7)
+floor_m, ceil_m, cove_m = mat("Floor", (.09, .06, .04)), mat("Ceiling", (.06, .055, .05)), mat("Cove", (1, .72, .42), emit=16)
 glow_m = mat("ScreenGlow", (.75, .8, .9), emit=1.2)
 
 # ---------- architecture (baked) ----------
-floor = box("Floor", 0, -.05, (D0 + D1) / 2, 2 * W, .1, D1 - D0, floor_m)
+bpy.ops.mesh.primitive_plane_add(size=1, location=B(0, 0, (D0 + D1) / 2)); floor = bpy.context.object; floor.name = "Floor"; floor.scale = (2 * W, D1 - D0, 1); bpy.ops.object.transform_apply(scale=True); floor.data.materials.append(floor_m)
+rug = box("rug", 0, .006, .45, 3.4, .012, 5.6, mat("Rug", (.16, .03, .03))); floor = join([floor, rug], "Floor")
 walls = []
 walls.append(box("wb", -SCR["w"] / 2 - (W - SCR["w"] / 2) / 2, H / 2, D0 - .1, W - SCR["w"] / 2, H, .2, walnut_dark))
 walls.append(box("wb2", SCR["w"] / 2 + (W - SCR["w"] / 2) / 2, H / 2, D0 - .1, W - SCR["w"] / 2, H, .2, walnut_dark))
@@ -104,12 +105,13 @@ cove = join(cove, "Cove")
 
 # ---------- furniture (live materials in the app, present here for shadows) ----------
 furn = []
-furn.append(box("TableTop", 0, .73, -.2, 1.5, .06, 5.0, mat("Walnut", (.12, .06, .03)), bevel=.015))
-for z in (-1.6, 1.2): furn.append(box("TableBase", 0, .36, z, .5, .7, .9, black, bevel=.01))
+furn.append(box("TableTop", 0, .73, .45, 1.4, .06, 4.2, mat("Walnut", (.12, .06, .03)), bevel=.015))
+for z in (-.9, 1.8): furn.append(box("TableBase", 0, .36, z, .5, .7, .8, black, bevel=.01))
 def chair(x, z, face):   # face = +1 looks toward +x
     parts = []
-    parts.append(box("ch", x, .47, z, .5, .1, .52, leather, bevel=.035))
-    bx = x - face * .27; parts.append(box("ch", bx, .92, z, .09, .66, .5, leather, bevel=.035)); bpy.context.object.rotation_euler[1] = face * math.radians(8)
+    parts.append(box("ch", x, .47, z, .52, .12, .52, leather, bevel=.05))
+    bx = x - face * .27; parts.append(box("ch", bx, .86, z, .08, .56, .48, leather, bevel=.04)); bpy.context.object.rotation_euler[1] = face * math.radians(12)
+    for o in parts[-2:]: sd = o.modifiers.new("sd", "SUBSURF"); sd.levels = 1; sd.render_levels = 1
     for s in (-1, 1):
         parts.append(box("arm", x + face * .02, .66, z + s * .29, .4, .035, .045, gold, bevel=.01))
         parts.append(cyl("armp", x - face * .1, .57, z + s * .29, .012, .18, gold, 10))
@@ -121,27 +123,28 @@ def chair(x, z, face):   # face = +1 looks toward +x
         for md in list(o.modifiers): pass
     lea = [o for o in parts if o.data.materials[0] == leather]; met = [o for o in parts if o.data.materials[0] == gold]; blk = [o for o in parts if o.data.materials[0] == black]
     return [join(lea, "ChairLeather"), join(met, "ChairMetal"), join(blk, "ChairCasters")]
-SEATS = [(-1.05, z, 1) for z in (-1.9, -.7, .5, 1.7)] + [(1.05, z, -1) for z in (-1.9, -.7, .5, 1.7)]
+SEATS = [(-1.0, z, 1) for z in (-1.15, .05, 1.25)] + [(1.0, z, -1) for z in (-1.15, .05, 1.25)]
 for (x, z, f) in SEATS: furn += chair(x, z, f)
 
 # ---------- lights for the bake ----------
 def spot(x, y, z, power, size=65, color=(1, .78, .55)):
     L = bpy.data.lights.new("s", "SPOT"); L.energy = power; L.spot_size = math.radians(size); L.spot_blend = .8; L.color = color; L.shadow_soft_size = .05
     o = bpy.data.objects.new("s", L); sc.collection.objects.link(o); o.location = B(x, y, z); o.rotation_euler = (0, 0, 0)   # points down -Z (Blender) = down
-for z in np.linspace(D0 + 1.0, D1 - 1.2, 6): spot(-W + .45, 2.98, z, 45); spot(W - .45, 2.98, z, 45)              # wall washers: warm scallops on the panels
-for x in (-3.0, -2.2, 2.2, 3.0): spot(x, 2.98, D0 + .45, 45)
-for z in (-2.0, -.2, 1.6): spot(0, H - .02, z, 70, 80)                                                            # over the table
+for z in np.linspace(D0 + 1.0, D1 - 1.2, 6): spot(-W + .32, 2.98, z, 120, 75); spot(W - .32, 2.98, z, 120, 75)              # wall washers: warm scallops on the panels
+for x in (-3.0, -2.2, 2.2, 3.0): spot(x, 2.98, D0 + .32, 120, 75)
+for z in (-1.2, .45, 2.1): spot(0, H - .02, z, 90, 80)
+spot(1.35, H - .02, -3.2, 110, 55)   # presenter key (baked part of it lands on the floor around him)                                                            # over the table
 L = bpy.data.lights.new("scr", "AREA"); L.energy = 30; L.size = SCR["w"]; L.size_y = SCR["h"]; L.shape = "RECTANGLE"; L.color = (.85, .9, 1)
 o = bpy.data.objects.new("scr", L); sc.collection.objects.link(o); o.location = B(0, SCR["y"], D0 + .05); o.rotation_euler = (math.radians(-90), 0, 0)
 for z in (-2.6, .2, 2.8):                                                                                          # brass sconces
     for x in (-W + .08, W - .08):
-        P = bpy.data.lights.new("sc", "POINT"); P.energy = 12; P.color = (1, .72, .45); P.shadow_soft_size = .08
+        P = bpy.data.lights.new("sc", "POINT"); P.energy = 35; P.color = (1, .72, .45); P.shadow_soft_size = .08
         oo = bpy.data.objects.new("sc", P); sc.collection.objects.link(oo); oo.location = B(x * .985, 2.1, z)
 
 # ---------- bake ----------
 sc.render.bake.use_pass_direct = True; sc.render.bake.use_pass_indirect = True; sc.render.bake.use_pass_color = False; sc.render.bake.margin = 8
 info = {}
-for o, res in ((floor, 1024), (walls, 2048), (ceiling, 1024)):
+for o, res in ((floor, 2048), (walls, 2048), (ceiling, 1024)):
     tile_uv(o, {"Floor": 1.6, "Walls": 1.2, "Ceiling": 2.0}[o.name])
     me = o.data; bu = me.uv_layers.new(name="Bake"); me.uv_layers.active = bu
     for x in bpy.context.selected_objects: x.select_set(False)

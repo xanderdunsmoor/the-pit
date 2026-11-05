@@ -144,3 +144,10 @@ html, body { margin: 0; height: 100%; }
 .cashchip, .chip-ai { border-color: rgba(201, 164, 92, .3); }
 .panel { background: rgba(14, 13, 12, .86); border-color: rgba(201, 164, 92, .18); }
 @media (prefers-reduced-motion: reduce) { #btn-mic.on { animation: none; } }
+
+/* quieter controls: the bar recedes while Rex speaks and returns when you reach for it */
+.go { font-family: var(--body); font-weight: 600; font-size: 17px; padding: 13px 28px; background: rgba(12, 11, 10, .72); color: #efe6d6; border: 1px solid rgba(201, 164, 92, .55); backdrop-filter: blur(12px); }
+.go:hover { background: var(--accent); color: #17120a; }
+.askbar { transition: opacity .6s ease; }
+body.speaking .askbar:not(:focus-within):not(:hover) { opacity: .55; }
+.chip-ai { opacity: .75; }

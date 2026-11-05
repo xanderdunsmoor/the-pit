@@ -25,7 +25,6 @@ async function preload() {
   const add = p => { jobs.push(p.catch(() => null).finally(tick)); };
   add(fetch("models/rex.json").then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const b = atob(j.glb); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); ASSETS.glb = u.buffer; }));
   add(fetch("models/boardroom.json").then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const b = atob(j.glb); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); ASSETS.room = u.buffer; }));
-  ["louise", "josh", "martha"].forEach(n => add(fetch(`models/inv_${n}.json`).then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const b = atob(j.glb); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); ASSETS.investors[n] = u.buffer; })));
   add(fetch("tex/lightmaps.json").then(r => r.ok ? r.json() : null).then(j => { if (j) Object.entries(j).forEach(([k, v]) => { ASSETS.lmScale[k] = v.scale; }); }));
   ["Floor", "Walls", "Ceiling"].forEach(n => add(new THREE.TextureLoader().loadAsync(`tex/lm_${n}.png`).then(t => { ASSETS.lm[n] = t; })));
   Object.entries(SFX_FILES).forEach(([k, list]) => list.forEach(f => add(fetch(`sfx/${f}.mp3`).then(r => r.ok ? r.arrayBuffer() : null).then(b => { if (b) (ASSETS.sfx[k] = ASSETS.sfx[k] || []).push(b); }))));
@@ -109,7 +108,25 @@ function tone(t, { f0 = 80, f1 = 40, gain = .5, decay = .25, type = "sine" } = {
   const g = a.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + decay);
   o.connect(g).connect(bus); o.start(t); o.stop(t + decay + .05);
 }
+// a restrained music bed, synthesised in the browser (no licensing): warm, slow chords far under the voice
+const Music = {
+  g: null, on: false, level: 1, timer: null,
+  start() {
+    const a = audio(); if (!a || this.on) return; this.on = true;
+    const out = a.createGain(); out.gain.value = 0; const lp = a.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 820; lp.Q.value = .4;
+    const lfo = a.createOscillator(); lfo.frequency.value = .05; const lg = a.createGain(); lg.gain.value = 180; lfo.connect(lg).connect(lp.frequency); lfo.start();
+    lp.connect(out); out.connect(a.destination); out.connect(verb); this.g = out;
+    const CH = [[146.8, 220, 277.2, 329.6], [123.5, 185, 246.9, 293.7], [98, 146.8, 246.9, 293.7], [110, 164.8, 220, 277.2]]; let i = 0;
+    const play = () => { if (!this.on) return; const t = a.currentTime; CH[i++ % CH.length].forEach((f, k) => { [0, 1].forEach(d => { const o = a.createOscillator(); o.type = k ? "triangle" : "sine"; o.frequency.value = f * (d ? 1.003 : .997); const gg = a.createGain(); gg.gain.setValueAtTime(0, t); gg.gain.linearRampToValueAtTime(.05 / (k + 1.5), t + 3); gg.gain.linearRampToValueAtTime(0, t + 10.5); o.connect(gg).connect(lp); o.start(t); o.stop(t + 11); }); }); this.timer = setTimeout(play, 8000); };
+    play(); this.duck(this.level, 4);
+  },
+  duck(level, secs = 1.5) { this.level = level; if (this.g && AC) this.g.gain.setTargetAtTime(.32 * level, AC.currentTime, secs / 3); },
+  stop() { this.on = false; clearTimeout(this.timer); if (this.g && AC) this.g.gain.setTargetAtTime(0, AC.currentTime, .5); }
+};
 const SFX = {
+  arrive() { const a = audio(); if (!a) return; const t = a.currentTime + .01; tone(t, { f0: 70, f1: 46, gain: .22, decay: .7 }); },
+  confirm() { playS("bell", .22, 1.25); const a = audio(); if (!a) return; this.chord(a.currentTime + .02, [261.6, 392, 523.3], 1.6, .018, 2200); },
+  pass() { const a = audio(); if (!a) return; this.chord(a.currentTime + .02, [110, 164.8], 1.4, .02, 600); },
   drumroll(dur) { const a = audio(); if (!a) return; const t0 = a.currentTime + .05; let t = t0; while (t < t0 + dur) { const p = (t - t0) / dur; noiseHit(t, { freq: 2200, q: .9, gain: .04 + .22 * p * p, decay: .05 }); t += .042 + .006 * Math.random(); } },
   crash() { const a = audio(); if (!a) return; const t = a.currentTime + .01; noiseHit(t, { freq: 6000, type: "highpass", q: .5, gain: .35, decay: 1.6 }); tone(t, { f0: 70, f1: 38, gain: .7, decay: .6 }); },
   clunk() { playS("clunk", .8, .8); const a = audio(); if (!a) return; const t = a.currentTime + .01; tone(t, { f0: 120, f1: 45, gain: .6, decay: .18, type: "triangle" }); noiseHit(t, { freq: 900, gain: .25, decay: .08 }); },
@@ -139,7 +156,13 @@ const SFX = {
 // Browser speech remains as a fallback and as an option in settings.
 const NEURAL = { voiceURI: "neural", name: "Rex (studio voice)", lang: "en-US", neural: true };
 const VBUF = {};
-function decodeVoice() { if (!AC || !ASSETS.voice) return; Object.entries(ASSETS.voiceRaw).forEach(([id, raw]) => { if (VBUF[id]) return; try { AC.decodeAudioData(raw.slice(0), b => { VBUF[id] = b; }, () => {}); } catch (e) {} }); }
+const VORDER = [], VPEND = {};
+function ensureVoice(id) {
+  if (VBUF[id] || VPEND[id] || !AC || !ASSETS.voiceRaw[id]) return;
+  VPEND[id] = true;
+  try { AC.decodeAudioData(ASSETS.voiceRaw[id].slice(0), b => { VBUF[id] = b; delete VPEND[id]; VORDER.push(id); while (VORDER.length > 24) delete VBUF[VORDER.shift()]; }, () => { delete VPEND[id]; }); } catch (e) { delete VPEND[id]; }
+}
+function decodeVoice() {}
 const MOUTH = { open: 0, wide: 0, round: 0, press: 0, frames: null, t0: 0 };
 const Voice = {
   list: [], chosen: null, talking: false, token: 0, safety: null, fake: null, timers: [], srcs: [],
@@ -197,7 +220,7 @@ const Voice = {
     const finish = () => { if (tok !== this.token) return; clearTimeout(this.safety); this.talking = false; MOUTH.frames = null; cb.onDone && cb.onDone(); };
     const ids = S.voice ? this.clipsFor(sentences) : null;
     if (ids && ctx()) {
-      decodeVoice();
+      ids.forEach(ensureVoice);
       // natural pacing: a short breath between sentences, a longer one after a question
       let i = 0; const next = () => {
         if (tok !== this.token) return; if (i >= ids.length) { finish(); return; }
@@ -292,7 +315,7 @@ const angDiff = (a, b) => { let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.P
 
 // boardroom layout (metres): you sit at the head of the table; the screen is on the back wall; Rex enters through a door in the left wall
 const DOOR_X = -4.0, DOOR_Z = -3.7, OFF = { x: -5.3, z: -3.7 }, INSIDE = { x: -3.4, z: -3.7 };
-const MARK = { x: 2.95, z: -4.55 }, SCREEN_SPOT = { x: 2.35, z: -4.8 };
+const MARK = { x: 1.35, z: -3.2 }, SCREEN_SPOT = { x: 2.3, z: -4.75 };
 const SCREEN_POS = new THREE.Vector3(0, 1.8, -5.52);
 const THEMES = {
   classic: { accent: 0xe7b24c, wall: "#3a1626", wallRough: .95, floor: () => woodTex("#7a4a2a", "40,20,8", 7), floorRough: .38, ambient: 0xffe2c4, ground: 0x2a1408, key: 0xffd9a8, strip: 0xffb35c, backlight: 0xfff1d8, jacket: 0x3a2260 },
@@ -304,13 +327,13 @@ function initGL(hooks) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
   Object.values(ASSETS.tex).forEach(t => { t.anisotropy = maxAniso; });
-  let dpr = Math.min(1.75, devicePixelRatio || 1); renderer.setPixelRatio(dpr);
+  let dpr = Math.min(1.5, devicePixelRatio || 1); renderer.setPixelRatio(dpr);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .95;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
   stage.prepend(renderer.domElement); renderer.domElement.setAttribute("aria-hidden", "true");
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x050406); scene.fog = new THREE.Fog(0x050406, 14, 30);
   const camera = new THREE.PerspectiveCamera(45, 16 / 9, .05, 60);
-  const camBase = new THREE.Vector3(0, 1.3, 3.5); camera.position.copy(camBase);
+  const camBase = new THREE.Vector3(0, 1.28, 3.05); camera.position.copy(camBase);
   const WIDE_LOOK = new THREE.Vector3(.35, 1.45, -4.6);
 
   // ----- room: the boardroom, modelled and lit in Blender (tools/blender/build_boardroom.py); its lighting is baked into lightmaps -----
@@ -327,15 +350,15 @@ function initGL(hooks) {
   const M_LIVE = {
     walnut: new THREE.MeshPhysicalMaterial({ color: 0xa87452, map: tiled(TX.walnut_diff), normalMap: tiled(TX.walnut_nor_gl), roughnessMap: tiled(TX.walnut_rough), roughness: .5, clearcoat: .4, clearcoatRoughness: .2, envMapIntensity: .6 }),
     lacquer: new THREE.MeshStandardMaterial({ color: 0x0c0c0d, roughness: .28, metalness: 0, envMapIntensity: .8 }),
-    leather: new THREE.MeshStandardMaterial({ color: 0x1c1a19, map: tiled(TX.leather_diff, 1), normalMap: tiled(TX.leather_nor_gl, 1), roughnessMap: tiled(TX.leather_rough, 1), roughness: .75, envMapIntensity: .35 }),
+    leather: new THREE.MeshStandardMaterial({ color: 0x4a1d1a, map: tiled(TX.leather_diff, 1), normalMap: tiled(TX.leather_nor_gl, 1), roughnessMap: tiled(TX.leather_rough, 1), roughness: .75, envMapIntensity: .35 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xb8925a, metalness: 1, roughness: .28, envMapIntensity: 1.1 })
   };
   if (ASSETS.room) new GLTFLoader().parse(ASSETS.room.slice(0), "", g => {
     const r = g.scene; room.add(r); r.updateMatrixWorld(true);
     r.traverse(o => { if (!o.isMesh) return; let top = o; while (top.parent && top.parent !== r) top = top.parent; const obj = top.name, mn = o.material.name;
-      if (/^Floor/.test(obj)) o.material = bakedMat(0x7a5a44, tiled(TX.parquet_diff), "Floor", 1.8);
-      else if (/^Walls/.test(obj)) o.material = mn === "Brass" ? bakedMat(0xd8b06c, null, "Walls", 2.2) : mn === "Lacquer" ? bakedMat(0x161515, null, "Walls", 2) : bakedMat(0x8a7a70, tiled(TX.veneer_diff), "Walls", 3.2);
-      else if (/^Ceiling/.test(obj)) o.material = bakedMat(0x4a4540, null, "Ceiling", 2.4);
+      if (/^Floor/.test(obj)) o.material = mn === "Rug" ? bakedMat(0x9a4a48, tiled(TX.velvet_diff), "Floor", .8) : bakedMat(0x7a5a44, tiled(TX.parquet_diff), "Floor", .85);
+      else if (/^Walls/.test(obj)) o.material = mn === "Brass" ? bakedMat(0xd8b06c, null, "Walls", 1.0) : mn === "Lacquer" ? bakedMat(0x161515, null, "Walls", 1.0) : bakedMat(0x6a4d3e, tiled(TX.walnut_diff), "Walls", 1.0);
+      else if (/^Ceiling/.test(obj)) o.material = bakedMat(0x4a4540, null, "Ceiling", 1.0);
       else if (/^Cove/.test(obj)) { o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .72, .42).multiplyScalar(3.2) }); o.material.userData.base = o.material.color.clone(); baked.push(o.material); }
       else { o.material = /^TableTop/.test(obj) ? M_LIVE.walnut : mn === "Leather" ? M_LIVE.leather : mn === "Brass" ? M_LIVE.brass : M_LIVE.lacquer; boxUV(o, /^TableTop/.test(obj) ? 2.4 : .6); o.castShadow = true; o.receiveShadow = true; }
     });
@@ -344,8 +367,8 @@ function initGL(hooks) {
   // brass-and-glass pendants over the table: the warm points of light in the references
   const pendants = new THREE.Group(); scene.add(pendants); const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .78, .5).multiplyScalar(4) }); bulbMat.userData.base = bulbMat.color.clone(); baked.push(bulbMat);
   const globeMat = new THREE.MeshPhysicalMaterial({ color: 0xfff4e6, roughness: .08, metalness: 0, transparent: true, opacity: .22, envMapIntensity: 1.2, depthWrite: false });
-  for (const z of [-1.7, -.2, 1.3]) { const gp = new THREE.Group(); gp.position.set(0, 2.55, z); pendants.add(gp); gp.add(new THREE.Mesh(new THREE.SphereGeometry(.17, 32, 24), globeMat)); gp.add(new THREE.Mesh(new THREE.SphereGeometry(.035, 16, 12), bulbMat)); const rod = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, .85, 8), M_LIVE.brass); rod.position.y = .6; gp.add(rod); const cap = new THREE.Mesh(new THREE.CylinderGeometry(.03, .05, .05, 16), M_LIVE.brass); cap.position.y = .18; gp.add(cap); }
-  const pendantLight = new THREE.PointLight(0xffcf98, 1.6, 6, 2); pendantLight.position.set(0, 2.3, -.2); scene.add(pendantLight);
+  for (const z of [-1.0, .45, 1.9]) { const gp = new THREE.Group(); gp.position.set(0, 2.55, z); pendants.add(gp); gp.add(new THREE.Mesh(new THREE.SphereGeometry(.17, 32, 24), globeMat)); gp.add(new THREE.Mesh(new THREE.SphereGeometry(.035, 16, 12), bulbMat)); const rod = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, .85, 8), M_LIVE.brass); rod.position.y = .6; gp.add(rod); const cap = new THREE.Mesh(new THREE.CylinderGeometry(.03, .05, .05, 16), M_LIVE.brass); cap.position.y = .18; gp.add(cap); }
+  const pendantLight = new THREE.PointLight(0xffcf98, 1.6, 6, 2); pendantLight.position.set(0, 2.3, .45); scene.add(pendantLight);
   // door into the room (left wall) and the lit corridor behind it for the entrance
   const doorW = 1.2, doorH = 2.45; const panelMat = std(0x0e0d0d, { roughness: .32, metalness: .2 });
   const doorL = box(.07, doorH, doorW / 2, panelMat, DOOR_X + .04, doorH / 2, DOOR_Z - doorW / 4, room);
@@ -407,10 +430,10 @@ function initGL(hooks) {
   // ----- lights -----
   const hemi = new THREE.HemisphereLight(0xffe2c4, 0x1a0f08, 1.0); scene.add(hemi);
   const ambL = new THREE.AmbientLight(0xffffff, .2); scene.add(ambL);
-  const key = new THREE.SpotLight(0xffd9a8, 0, 24, .42, .5, 2); key.position.set(1.5, 3.32, -2.3); key.target.position.set(MARK.x, 0, MARK.z); key.angle = .5;
+  const key = new THREE.SpotLight(0xffd9a8, 0, 24, .42, .5, 2); key.position.set(.5, 3.32, -1.2); key.target.position.set(MARK.x, 0, MARK.z); key.angle = .55;
   key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0002; key.shadow.normalBias = .02; key.shadow.radius = 3; key.shadow.camera.near = 1; key.shadow.camera.far = 12; scene.add(key, key.target);
   const fill = new THREE.DirectionalLight(0xffe6cc, .55); fill.position.set(-1, 2.5, 4); scene.add(fill);
-  const rim = new THREE.SpotLight(0xffffff, 12, 16, .6, .7, 2); rim.position.set(.6, 3.3, -5.35); rim.target.position.set(MARK.x, 1.3, MARK.z); scene.add(rim, rim.target);
+  const rim = new THREE.SpotLight(0xffffff, 12, 16, .6, .7, 2); rim.position.set(.9, 3.3, -5.3); rim.target.position.set(MARK.x, 1.3, MARK.z); scene.add(rim, rim.target);
   const deskLamp = new THREE.PointLight(0xffd2a0, 1.1, 3, 2); deskLamp.position.set(0, 1.5, 2.6); scene.add(deskLamp);
   const canLights = []; const canMat = new THREE.MeshBasicMaterial({ color: 0 }); const CAN = new THREE.Color(0);
   const themeGroup = new THREE.Group(); scene.add(themeGroup); const strips = [], themeLights = [];
@@ -488,7 +511,7 @@ function initGL(hooks) {
   const blob = r => { const b = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), blobMat); b.rotation.x = -Math.PI / 2; b.renderOrder = 1; return b; };
   const rexBlob = blob(.42); rexBlob.material = blobMat.clone(); scene.add(rexBlob);
   const BLEND = .5;
-  const GD = { next: 0, last: "", idleSwap: now() + 20000, layerAt: 0, glance: new THREE.Vector2(), glanceAt: 0, look: new THREE.Vector2() };
+  const GD = { beatAt: 0, prevOpen: 0, acked: false, next: 0, last: "", idleSwap: now() + 20000, layerAt: 0, glance: new THREE.Vector2(), glanceAt: 0, look: new THREE.Vector2() };
   if (ASSETS.glb) new GLTFLoader().parse(ASSETS.glb.slice(0), "", g => {
     try {
       const m = g.scene; m.updateMatrixWorld(true);
@@ -496,6 +519,8 @@ function initGL(hooks) {
       rex.add(m); m.updateMatrixWorld(true);
       const modelMats = [];
       m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; const mm = o.material; mm.metalness = 0; mm.metalnessMap = null; mm.roughnessMap = null; mm.roughness = /hair|lash/i.test(o.name) ? .6 : .82; mm.envMapIntensity = .55; if (/hair|lash/i.test(o.name)) { mm.alphaTest = .45; mm.transparent = false; mm.side = THREE.DoubleSide; } if (!modelMats.includes(mm)) modelMats.push(mm); } });
+      m.traverse(o => { if (o.isMesh && /Body/.test(o.name) && !/Shoes|Pants|Suit|Shirt|Tie|Belt/.test(o.name)) { const src = o.material; o.material = new THREE.MeshPhysicalMaterial({ map: src.map, normalMap: src.normalMap, color: src.color, roughness: .52, metalness: 0, sheen: .35, sheenColor: new THREE.Color(0xd8735c), sheenRoughness: .55, envMapIntensity: .5 }); o.material.name = src.name + "_skin"; }
+        if (o.isMesh && /hair|lash/i.test(o.name)) o.material.alphaToCoverage = true; });
       const B = n => m.getObjectByName(n);
       // face controls baked in Blender (tools/blender/face_rig.py): shape keys on the head, eye bones for gaze
       const face = []; m.traverse(o => { if (o.isMesh && o.morphTargetDictionary) face.push(o); });
@@ -528,6 +553,8 @@ function initGL(hooks) {
       const arm = () => ({ u: new THREE.Vector3(0, -1, 0), l: new THREE.Vector3(0, -1, 0), tu: new THREE.Vector3(0, -1, 0), tl: new THREE.Vector3(0, -1, 0), w: new Spring(0, 16, 1) });
       const restQ = ["head", "neck", "uaR", "laR", "uaL", "laL"].map(k => [bn[k], bn[k].quaternion.clone()]);
       const eyeRest = [bn.eyeL, bn.eyeR].filter(Boolean).map(b => [b, b.quaternion.clone()]);
+      const corneaMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: .07, roughness: .03, metalness: 0, clearcoat: 1, clearcoatRoughness: .02, envMapIntensity: 2.2, depthWrite: false });
+      [bn.eyeL, bn.eyeR].forEach(b => { if (!b) return; b.getWorldPosition(_v1); const c = new THREE.Mesh(new THREE.SphereGeometry(.0172, 24, 16), corneaMat); c.position.copy(_v1); rex.worldToLocal(c.position); rex.add(c); b.attach(c); });
       Object.assign(MODEL, { ready: true, restQ, eyeRest, face, m, bn, mixer, A, L, walk, cur: "Idle", oneShot: null, arms: { R: arm(), L: arm() } });
       mixer.addEventListener("finished", e => { if (MODEL.oneShot && e.action === A[MODEL.oneShot.name]) { const done = MODEL.oneShot.done; MODEL.oneShot = null; e.action.fadeOut(BLEND); A[MODEL.cur].reset().fadeIn(BLEND).play(); done && done(); } });
       softenEnv();
@@ -535,14 +562,16 @@ function initGL(hooks) {
   }, err => dbg("parse err " + (err && err.message)));
   function baseClip(name) { if (!MODEL.ready || MODEL.cur === name || !MODEL.A[name]) return; const a = MODEL.A[name]; a.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(BLEND).play(); MODEL.A[MODEL.cur].fadeOut(BLEND); MODEL.cur = name; }
   function onceClip(name, done) { if (!MODEL.ready || !MODEL.A[name]) { done && done(); return; } const a = MODEL.A[name]; a.reset(); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.fadeIn(BLEND).play(); MODEL.A[MODEL.cur].fadeOut(BLEND); MODEL.oneShot = { name, done }; }
-  function layer(name) { const a = MODEL.ready && MODEL.L[name]; if (!a || now() < GD.layerAt) return; GD.layerAt = now() + 3500; a.reset().setEffectiveWeight(1).fadeIn(.3).play(); }
+  function layer(name, w = 1) { const a = MODEL.ready && MODEL.L[name]; if (!a || now() < GD.layerAt) return; GD.layerAt = now() + 1500; a.reset().setEffectiveWeight(w * (name === "Nod" ? .45 : 1)).fadeIn(.25).play(); }
   // gesture director: picks the body clip from what Rex is doing, and never repeats the same talking gesture twice in a row
   function direct(t, walking, talking) {
     const Mo = MODEL; if (Mo.oneShot) return;
     if (walking) { baseClip("Walk"); return; }
-    if (talking) { if (!Mo.cur.startsWith("Talk") || t > GD.next) { const opts = ["Talk1", "Talk2", "Talk3"].filter(n => n !== GD.last && Mo.A[n]); const n = opts[Math.floor(Math.random() * opts.length)]; GD.last = n; GD.next = t + 4200 + Math.random() * 2600; baseClip(n); } return; }
-    if (st.lk > .5 && Mo.A.Think) { baseClip("Think"); return; }
-    if (t > GD.idleSwap) { GD.idleSwap = t + 16000 + Math.random() * 10000; baseClip(Mo.cur === "Idle" && Mo.A.Idle2 ? "Idle2" : "Idle"); return; }
+    if (talking) { if (!Mo.cur.startsWith("Talk") || t > GD.next) { const opts = ["Talk1", "Talk2", "Talk3", "Talk4", "Talk5"].filter(n => n !== GD.last && Mo.A[n]); const n = opts[Math.floor(Math.random() * opts.length)]; GD.last = n; GD.next = t + 4200 + Math.random() * 2600; baseClip(n); } return; }
+    // listening: acknowledge once, then a calm, attentive stance (not the chin-stroke every time)
+    if (st.lk > .5) { if (!GD.acked && Mo.A.Ack) { GD.acked = true; onceClip("Ack"); return; } baseClip(Mo.A.Idle3 ? "Idle3" : Mo.A.Think ? "Think" : "Idle"); return; }
+    GD.acked = false;
+    if (t > GD.idleSwap) { GD.idleSwap = t + 14000 + Math.random() * 10000; const idles = ["Idle", "Idle2", "Idle3", "Idle4"].filter(n => Mo.A[n] && n !== Mo.cur); baseClip(idles[Math.floor(Math.random() * idles.length)] || "Idle"); return; }
     if (!Mo.cur.startsWith("Idle")) baseClip("Idle");
   }
   const armList = [null, null];
@@ -581,6 +610,9 @@ function initGL(hooks) {
     rotWorld(Mo.bn.neck, UP, GD.look.x * .35); rotWorld(h, UP, GD.look.x * .45);
     rotWorld(h, right, -GD.look.y * .5 - (.08 * st.mu - .04 * st.mc) - st.mOpen * .035);
     rotWorld(h, fwd, .1 * st.lk);
+    if (talking && !walking && !Mo.oneShot) { const o = st.mOpen; if (o > .82 && GD.prevOpen <= .82 && t > GD.beatAt) { GD.beatAt = t + 1700 + Math.random() * 900; layer("Nod"); FX.bUp = Math.min(.6, FX.bUp + .25); } GD.prevOpen = o; }
+    // slight lean in while you speak or type
+    if (st.lk > .05) rotWorld(Mo.bn.spine, right, -.05 * st.lk);
     driveFace(dt, t, walking, talking);
   }
   // ----- face: speech-driven jaw and lips, mood on brows and mouth corners, natural blinks, eyes that look at you -----
@@ -612,16 +644,17 @@ function initGL(hooks) {
   }
   // ----- silent investors at the table (Mixamo characters, seated idle); they glance at Rex now and then but never speak or react -----
   const investors = [];
-  const SEATED = [["louise", -1.05, -.7, 1], ["josh", 1.05, -1.9, -1], ["martha", -1.05, -1.9, 1]];
-  SEATED.forEach(([n, x, z, face], idx) => { const buf = ASSETS.investors[n]; if (!buf) return;
-    new GLTFLoader().parse(buf.slice(0), "", g => {
+  const SEATED = [["louise", -1.0, .05, 1], ["josh", 1.0, 1.25, -1], ["martha", -1.0, -1.15, 1]];
+  function loadInvestors() { SEATED.forEach(([n, x, z, face], idx) => fetch(`models/inv_${n}.json`).then(r => r.ok ? r.json() : null).then(j => { if (!j) return;
+    const b = atob(j.glb); const buf = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) buf[i] = b.charCodeAt(i);
+    new GLTFLoader().parse(buf.buffer, "", g => {
       const m = g.scene; m.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(m); const s = 1.72 / Math.max(.01, bb.max.y - bb.min.y); m.scale.multiplyScalar(s);
       const holder = new THREE.Group(); holder.position.set(x - face * .04, 0, z); holder.rotation.y = face * Math.PI / 2; holder.add(m); scene.add(holder);
       m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; o.material.metalness = 0; o.material.metalnessMap = null; o.material.roughnessMap = null; o.material.roughness = .85; o.material.envMapIntensity = .45; if (/hair|lash/i.test(o.name)) { o.material.alphaTest = .45; o.material.transparent = false; o.material.side = THREE.DoubleSide; } } });
       const mixer = new THREE.AnimationMixer(m); const clip = g.animations[0]; if (clip) { const a = mixer.clipAction(clip); a.play(); a.time = (idx * 3.7) % clip.duration; a.timeScale = .9 + idx * .07; }
       investors.push({ mixer, head: m.getObjectByName("Head"), holder, look: 0, next: now() + 4000 + idx * 2500, want: 0 });
     }, e => dbg("investor " + (e && e.message)));
-  });
+  }).catch(() => {})); }
   function updateInvestors(dt, t) {
     for (const iv of investors) {
       iv.mixer.update(dt);
@@ -653,48 +686,58 @@ function initGL(hooks) {
 
   // ----- screen: charts build, numbers count up, spoken value lights up -----
   const sc = { mode: "idle", visual: null, src: "", revealStart: 0, buildStart: 0, hl: -1 };
-  // presentation style: near-black, white-to-grey bars, the period that matters in champagne gold, small-caps filing header
-  const GOLD = "#c9a45c", GOLD2 = "#8a6a2e";
+  // institutional presentation: charcoal-navy slide, takeaway headline, chart with periods and units, growth callouts, source and method notes
+  const GOLD = "#c9a45c", GOLD2 = "#8a6a2e", INK = "#f2f4f7", SUB = "#9aa4b5", FAINT = "#5d6879";
   function drawScreen() {
     const g = screenCanvas.getContext("2d"); g.setTransform(SCR_K, 0, 0, SCR_K, 0, 0); const w = 1280, h = 734;
-    g.textAlign = "left"; g.fillStyle = "#050505"; g.fillRect(0, 0, w, h);
-    const caps = (t, x, y, size, color, align = "left") => { g.textAlign = align; g.fillStyle = color; g.font = `500 ${size}px 'Lexend', sans-serif`; g.letterSpacing = "3px"; g.fillText(t.toUpperCase(), x, y); g.letterSpacing = "0px"; g.textAlign = "left"; };
-    if (sc.mode === "idle" || sc.mode === "standby") {
-      caps(sc.mode === "standby" ? "Stand by" : "The Pit", w / 2, h / 2 + 8, 30, "#8d8a84", "center");
-      g.fillStyle = GOLD; g.fillRect(w / 2 - 60, h / 2 + 34, 120, 2); return;
-    }
+    const bgr = g.createLinearGradient(0, 0, 0, h); bgr.addColorStop(0, "#131c2b"); bgr.addColorStop(1, "#0b111c"); g.fillStyle = bgr; g.fillRect(0, 0, w, h);
+    const caps = (t, x, y, size, color, align = "left") => { g.textAlign = align; g.fillStyle = color; g.font = `500 ${size}px 'Lexend', sans-serif`; g.letterSpacing = "2.5px"; g.fillText(t.toUpperCase(), x, y); g.letterSpacing = "0px"; g.textAlign = "left"; };
+    if (sc.mode === "idle" || sc.mode === "standby") { caps(sc.mode === "standby" ? "Stand by" : "The Pit", w / 2, h / 2 + 8, 28, SUB, "center"); g.fillStyle = GOLD; g.fillRect(w / 2 - 50, h / 2 + 32, 100, 2); return; }
     if (sc.mode === "reveal") {
       const p = smoother(Math.min(1, (now() - sc.revealStart) / 1600));
-      g.globalAlpha = p; g.fillStyle = "#f4f1ea"; g.font = "800 190px 'Bricolage Grotesque', sans-serif"; g.textAlign = "center"; g.fillText("NVIDIA", w / 2, h / 2 + 40);
-      g.fillStyle = GOLD; g.fillRect(w / 2 - 90 * p, h / 2 + 80, 180 * p, 2); caps("Nasdaq · NVDA", w / 2, h / 2 + 130, 28, GOLD, "center"); g.globalAlpha = 1; g.textAlign = "left"; return;
+      g.globalAlpha = p; g.fillStyle = INK; g.font = "700 170px 'Lexend', sans-serif"; g.textAlign = "center"; g.fillText("NVIDIA", w / 2, h / 2 + 30);
+      g.fillStyle = GOLD; g.fillRect(w / 2 - 80 * p, h / 2 + 70, 160 * p, 2); caps("Nasdaq · NVDA · Investor presentation", w / 2, h / 2 + 120, 22, SUB, "center"); g.globalAlpha = 1; g.textAlign = "left"; return;
     }
     const v = sc.visual; if (!v) return; const bp = smoother(Math.min(1, (now() - sc.buildStart) / 1100));
-    caps(sc.src || "NVIDIA", 64, 70, 20, "#8d8a84");
-    g.fillStyle = "#f4f1ea"; g.font = "700 50px 'Bricolage Grotesque', sans-serif"; g.fillText(v.title, 64, 138);
-    g.fillStyle = "rgba(201,164,92,.5)"; g.fillRect(64, 160, 90, 2);
+    g.fillStyle = GOLD; g.fillRect(64, 44, 36, 3);
+    caps(sc.src || "NVIDIA", 112, 52, 16, SUB);
+    g.fillStyle = INK; g.font = "600 46px 'Lexend', sans-serif"; g.fillText(v.take || v.title, 64, 118);
+    g.fillStyle = SUB; g.font = "400 23px 'Lexend', sans-serif"; g.fillText(v.title, 64, 156);
+    const fmt = val => v.unit === "%" ? (Number.isInteger(val) ? Math.round(val) : val.toFixed(1)) + "%" : fmtB(val);
     if (v.type === "bars") {
-      const n = v.items.length, max = Math.max(...v.items.map(i => i[1])); const top = 230, base = h - 140, left = 80, right = w - 80;
-      const slot = (right - left) / n, bw = Math.min(170, slot * .56);
-      g.fillStyle = "#26231f"; g.fillRect(left - 20, base, right - left + 40, 2);
+      const n = v.items.length, max = Math.max(...v.items.map(i => i[1])); const top = 236, base = h - 148, left = 90, right = w - 90;
+      const slot = (right - left) / n, bw = Math.min(150, slot * .5);
+      g.fillStyle = "#26324a"; for (let k = 1; k <= 3; k++) g.fillRect(left - 20, base - (base - top - 40) * k / 3, right - left + 40, 1);
+      g.fillStyle = "#3a465e"; g.fillRect(left - 20, base, right - left + 40, 2);
+      const tops = [];
       v.items.forEach(([lab, val, hi], i) => {
         const k = smoother(Math.min(1, Math.max(0, bp * 1.4 - i * .12))), lit = sc.hl === i, gold = hi || lit;
-        const cx = left + slot * (i + .5), bh = (base - top - 50) * val / max * k, x = cx - bw / 2, y = base - bh;
-        const gr = g.createLinearGradient(0, y, 0, base); if (gold) { gr.addColorStop(0, GOLD); gr.addColorStop(1, GOLD2); } else { gr.addColorStop(0, "#e9e6df"); gr.addColorStop(1, "#4a4844"); }
-        if (lit) { g.shadowColor = GOLD; g.shadowBlur = 30; }
+        const cx = left + slot * (i + .5), bh = (base - top - 40) * val / max * k, x = cx - bw / 2, y = base - bh; tops.push([cx, y]);
+        const gr = g.createLinearGradient(0, y, 0, base); if (gold) { gr.addColorStop(0, GOLD); gr.addColorStop(1, GOLD2); } else { gr.addColorStop(0, "#c9d1dc"); gr.addColorStop(1, "#5d6879"); }
+        if (lit) { g.shadowColor = GOLD; g.shadowBlur = 26; }
         g.fillStyle = gr; g.fillRect(x, y, bw, bh); g.shadowBlur = 0;
-        const shown = val * k; g.textAlign = "center"; g.fillStyle = gold ? GOLD : "#f4f1ea"; g.font = "700 34px 'Lexend', sans-serif";
-        g.fillText(v.unit === "%" ? (Number.isInteger(val) ? Math.round(shown) : shown.toFixed(1)) + "%" : fmtB(shown), cx, y - 16);
-        g.fillStyle = lit ? "#f4f1ea" : "#a9a59d"; g.font = "400 24px 'Lexend', sans-serif"; let L = lab; while (g.measureText(L).width > slot - 16 && L.length > 3) L = L.slice(0, -2) + "…"; g.fillText(L, cx, base + 42); g.textAlign = "left";
+        g.textAlign = "center"; g.fillStyle = gold ? GOLD : INK; g.font = "600 30px 'Lexend', sans-serif"; g.fillText(fmt(val * k), cx, y - 14);
+        g.fillStyle = lit ? INK : SUB; g.font = "400 21px 'Lexend', sans-serif"; let L = lab; while (g.measureText(L).width > slot - 14 && L.length > 3) L = L.slice(0, -2) + "…"; g.fillText(L, cx, base + 36); g.textAlign = "left";
       });
+      // growth between periods (our calculation), shown once the bars have built
+      if (v.growth && bp > .95) for (let i = 1; i < v.items.length; i++) {
+        const a = v.items[i - 1][1], b = v.items[i][1]; if (!a) continue; const pct = (b / a - 1) * 100, txt = (pct >= 0 ? "+" : "") + pct.toFixed(0) + "%";
+        const mx = (tops[i - 1][0] + tops[i][0]) / 2, my = Math.min(tops[i - 1][1], tops[i][1]) - 62;
+        g.font = "600 20px 'Lexend', sans-serif"; const tw = g.measureText(txt).width + 22; g.strokeStyle = "rgba(201,164,92,.6)"; g.lineWidth = 1.5; g.beginPath(); g.roundRect(mx - tw / 2, my - 22, tw, 32, 16); g.stroke();
+        g.fillStyle = GOLD; g.textAlign = "center"; g.fillText(txt, mx, my); g.textAlign = "left";
+      }
     } else {
-      v.items.forEach((t, i) => { const y = 250 + i * 104; if (bp * v.items.length <= i * .8) return; const lit = sc.hl === i;
-        g.fillStyle = lit ? GOLD : "#5a5650"; g.font = "700 40px 'Bricolage Grotesque', sans-serif"; g.fillText(String(i + 1).padStart(2, "0"), 64, y);
-        g.fillStyle = lit ? "#f4f1ea" : "#c9c5bd"; g.font = (lit ? "600" : "400") + " 36px 'Lexend', sans-serif"; g.fillText(t, 150, y);
-        g.fillStyle = lit ? "rgba(201,164,92,.6)" : "#1d1b18"; g.fillRect(150, y + 26, w - 214, 1); });
+      v.items.forEach((t, i) => { const y = 250 + i * 98; if (bp * v.items.length <= i * .8) return; const lit = sc.hl === i;
+        g.fillStyle = lit ? GOLD : FAINT; g.font = "600 34px 'Lexend', sans-serif"; g.fillText(String(i + 1).padStart(2, "0"), 64, y);
+        g.fillStyle = lit ? INK : "#c3cad6"; g.font = (lit ? "500" : "400") + " 32px 'Lexend', sans-serif"; g.fillText(t, 140, y);
+        g.fillStyle = lit ? "rgba(201,164,92,.55)" : "#1f2a3d"; g.fillRect(140, y + 24, w - 204, 1); });
     }
-    caps("Source: " + (sc.src || ""), 64, h - 40, 16, "#6f6b64");
+    g.fillStyle = "#1f2a3d"; g.fillRect(64, h - 76, w - 128, 1);
+    caps("Source: " + (sc.src || ""), 64, h - 44, 14, FAINT);
+    if (v.growth || (sc.calc && sc.calc.length)) { g.fillStyle = FAINT; g.font = "400 15px 'Lexend', sans-serif"; g.textAlign = "right"; g.fillText("Growth rates and shares are our calculations from reported figures", w - 64, h - 44); g.textAlign = "left"; }
   }
-  function setScreen(mode, visual, src) {
+  function setScreen(mode, visual, src, calc) {
+    sc.calc = calc || null;
     sc.mode = mode; screenLevel.t = mode === "visual" ? .85 : mode === "reveal" ? 1 : .3; if (visual !== undefined) sc.visual = visual; if (src !== undefined) sc.src = src;
     sc.built = false; if (mode === "reveal") sc.revealStart = now(); if (mode === "visual") { sc.buildStart = now(); sc.hl = -1; }
     drawScreen(); screenTex.needsUpdate = true;
@@ -720,11 +763,11 @@ function initGL(hooks) {
   function shotTarget() {
     const hx = rex.position.x, hz = rex.position.z;
     switch (shot.name) {
-      case "rex": return tgt4(hx, 1.6 + rex.position.y, hz, baseFov * .36 * shot.push);
-      case "mid": return tgt4(hx * .55, 1.38, hz + 1.2, baseFov * .72);
-      case "two": return tgt4((hx + SCREEN_POS.x) / 2, 1.65, (hz + SCREEN_POS.z) / 2, baseFov * .62);
+      case "rex": return tgt4(hx, 1.45, hz, baseFov * .34 * shot.push);
+      case "mid": return tgt4(hx * .75, 1.4, hz + .5, baseFov * .5);
+      case "two": return tgt4(hx * .55 + SCREEN_POS.x * .45, 1.62, hz * .55 + SCREEN_POS.z * .45, baseFov * .6);
       case "screen": return tgt4(SCREEN_POS.x, SCREEN_POS.y, SCREEN_POS.z, baseFov * .5);
-      case "listen": return tgt4(hx, 1.52 + rex.position.y, hz, baseFov * .5);
+      case "listen": return tgt4(hx, 1.45, hz, baseFov * .4);
       case "desk": return tgt4(0, .8, 1.6, baseFov);
       default: return tgt4(WIDE_LOOK.x, WIDE_LOOK.y, WIDE_LOOK.z, baseFov);
     }
@@ -733,7 +776,7 @@ function initGL(hooks) {
   function setShot(name, cut) {
     if (reduced && name !== "wide") name = name === "screen" ? "two" : "mid"; if (shot.name === name) return;
     shot.fovAt = now() + 250; shot.name = name;
-    if (cut && !reduced) { const tg = shotTarget(); [cam.lx, cam.ly, cam.lz].forEach((sp, i) => { sp.x = sp.t = tg[i]; sp.v = 0; }); cam.fov.x = cam.fov.t = tg[3]; cam.fov.v = 0; camera.fov = tg[3]; camera.updateProjectionMatrix(); shot.fovAt = 0; focus.cur = focus.cur * 1.6 + 1.5; }
+    if (false) { /* hard cuts retired: every change of shot is a slow glide */ const tg = shotTarget(); [cam.lx, cam.ly, cam.lz].forEach((sp, i) => { sp.x = sp.t = tg[i]; sp.v = 0; }); cam.fov.x = cam.fov.t = tg[3]; cam.fov.v = 0; camera.fov = tg[3]; camera.updateProjectionMatrix(); shot.fovAt = 0; focus.cur = focus.cur * 1.6 + 1.5; }
   }
   const focus = { cur: 6 }; const _bd = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 
@@ -746,14 +789,13 @@ function initGL(hooks) {
     composer = new EffectComposer(renderer, rt); composer.setPixelRatio(dpr);
     composer.addPass(new RenderPass(scene, camera));
     bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), .32, .5, 1.5); composer.addPass(bloom);
-    bokeh = new BokehPass(scene, camera, { focus: 6, aperture: .00002, maxblur: .006 }); bokeh.enabled = false; composer.addPass(bokeh);
     const vg = new ShaderPass(VignetteShader); vg.uniforms.offset.value = .95; vg.uniforms.darkness.value = 1.1; composer.addPass(vg);
     composer.addPass(new OutputPass());
     // a light film look: fine moving grain and a hint of lens colour fringing toward the edges
     filmPass = new ShaderPass({ uniforms: { tDiffuse: { value: null }, time: { value: 0 }, grain: { value: .022 }, ca: { value: .0016 } },
       vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
       fragmentShader: "uniform sampler2D tDiffuse; uniform float time, grain, ca; varying vec2 vUv; float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); } void main(){ vec2 d = vUv - .5; float r2 = dot(d, d); vec2 o = d * ca * r2 * 4.0; vec3 c = vec3(texture2D(tDiffuse, vUv + o).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - o).b); float n = h(vUv * 1000.0 + fract(time) * 37.0) - .5; float l = dot(c, vec3(.299, .587, .114)); c += n * grain * (1.0 - l * .6); gl_FragColor = vec4(c, 1.0); }" });
-    composer.addPass(filmPass);
+    // film pass kept out of the chain: on an integrated GPU it cost a full-screen pass for little visible gain
   } catch (e) { composer = null; dbg("composer " + e.message); }
   function softenEnv() { scene.traverse(o => { if (o.material && o.material.isMeshStandardMaterial && !o.material.userData.envSet) { if (!(o.material.envMapIntensity < 1)) o.material.envMapIntensity = o.material.metalness > .5 ? 1 : .5; o.material.userData.envSet = true; } }); }
 
@@ -864,7 +906,8 @@ function initGL(hooks) {
     key.target.position.x += (rex.position.x - key.target.position.x) * k(2); key.target.position.z += (rex.position.z - key.target.position.z) * k(2);
 
     // performance layers
-    const talking = Voice.talking; st.talkAmp += ((talking ? 1 : 0) - st.talkAmp) * k(5);
+    const talking = Voice.talking; if (talking !== st.wasTalking) { st.wasTalking = talking; document.body.classList.toggle("speaking", talking); }
+    st.talkAmp += ((talking ? 1 : 0) - st.talkAmp) * k(5);
     st.lk += ((st.listen && !talking && !walking ? 1 : 0) - st.lk) * k(3);
     st.mc += ((st.mood === "confident" ? 1 : 0) - st.mc) * k(2.5); st.mu += ((st.mood === "uneasy" ? 1 : 0) - st.mu) * k(2.5);
     if (!talking && !walking && !st.listen && !busy && t > st.nextFidget && st.sil < .1) { st.fidget = { kind: pick(MODEL.ready ? ["glance", "glance"] : ["hat", "glance", "weight"]), until: t + 1500 }; st.nextFidget = t + 8000 + Math.random() * 5000; }
@@ -884,15 +927,25 @@ function initGL(hooks) {
     rex.position.y = 0;
     updateModel(dt, T, t, walking, talking); placeBlob(); updateInvestors(dt, t);
     if (composer && quality > 0) {
-      const close = shot.name === "rex" || shot.name === "listen"; bokeh.enabled = quality > 1 && close && !reduced;
-      tmpV.set(rex.position.x, 1.55 + rex.position.y, rex.position.z); focus.cur += (camera.position.distanceTo(tmpV) - focus.cur) * k(3.5); if (bokeh.enabled) bokeh.uniforms.focus.value = focus.cur;
-      if (filmPass) { filmPass.uniforms.time.value = T; filmPass.enabled = !reduced; }
+      
+      tmpV.set(rex.position.x, 1.55 + rex.position.y, rex.position.z); focus.cur += (camera.position.distanceTo(tmpV) - focus.cur) * k(3.5);
       composer.render(dt);
     } else renderer.render(scene, camera);
-    if (!firstFrame) { firstFrame = true; const v = document.getElementById("veil"); if (v) { v.classList.add("gone"); setTimeout(() => v.remove(), 1400); } }
+    perfTick(t, dt);
+    if (!firstFrame) { firstFrame = true; later(1200, loadInvestors); const v = document.getElementById("veil"); if (v) { v.classList.add("gone"); setTimeout(() => v.remove(), 1400); } }
     requestAnimationFrame(frame);
   }
   let firstFrame = false;
+  const perf = { on: false, el: null, frames: 0, worst: 0, t0: now(), calls: 0, tris: 0 };
+  renderer.info.autoReset = false;
+  addEventListener("keydown", e => { if ((e.key === "p" || e.key === "P") && document.activeElement.tagName !== "INPUT") { perf.on = !perf.on; if (!perf.el) { perf.el = document.createElement("pre"); perf.el.style.cssText = "position:fixed;left:10px;top:10px;z-index:99;margin:0;padding:8px 10px;background:rgba(0,0,0,.72);color:#d8c69a;font:11px/1.45 ui-monospace,monospace;border-radius:8px;pointer-events:none"; document.body.appendChild(perf.el); } perf.el.hidden = !perf.on; } });
+  function perfTick(t, dt) {
+    perf.frames++; perf.worst = Math.max(perf.worst, dt * 1000); perf.calls = renderer.info.render.calls; perf.tris = renderer.info.render.triangles; renderer.info.reset();
+    if (!perf.on || t - perf.t0 < 500) return;
+    const fps = perf.frames * 1000 / (t - perf.t0), mem = performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) + " MB" : "n/a", m = renderer.info.memory;
+    perf.el.textContent = `fps ${fps.toFixed(0)}   worst ${perf.worst.toFixed(0)} ms\ndraw calls ${perf.calls}   triangles ${(perf.tris / 1000).toFixed(0)}k\ngeometries ${m.geometries}   textures ${m.textures}\nJS heap ${mem}   voice clips decoded ${Object.keys(VBUF).length}\nquality ${quality}   pixel ratio ${dpr}`;
+    perf.frames = 0; perf.worst = 0; perf.t0 = t;
+  }
   // the original stylised rig, kept as a fallback when the character model is unavailable
   function proceduralRex(t, T, dt, k, walking, talking, stride) {
     let a0x = .05, a0z = -.08, e0 = -.15, a1x = .05, a1z = .08, e1 = -.15;
@@ -934,6 +987,7 @@ function initGL(hooks) {
     setDesk(l) { setDesk(l); softenEnv(); }, drawNotes, setScreen, highlightFor, setShot,
     screenImage() { return screenCanvas.toDataURL("image/png"); },
     word(n) { st.mouthPulse = Math.min(.9, .4 + n * .06); },
+    present() { if (MODEL.ready && !st.pointing && !st.walk && !MODEL.oneShot && MODEL.A.Present && Math.random() < .5) onceClip("Present"); },
     mood(m) { if (m !== st.mood && MODEL.ready && Voice.talking) { if (m === "uneasy" && Math.random() < .6) layer("Shrug"); else if (m === "confident" && Math.random() < .3) layer("Nod"); } st.mood = m; },
     push(on) { shot.pushT = on ? .86 : 1; },
     listen(on) { st.listen = on; if (!busy && !Voice.talking) setShot(on ? "listen" : "mid"); },
@@ -952,10 +1006,10 @@ function initGL(hooks) {
       rex.position.set(OFF.x, 0, OFF.z); J.yaw.x = J.yaw.t = 0; st.sil = 1; st.bow = 0; doors(false, 1);
       backLight.intensity = 0; doorSpill.intensity = 0; glowMat.color.setScalar(0);
       if (reduced) { rex.position.set(MARK.x, 0, MARK.z); st.sil = 0; lighting("show", 10); setScreen("reveal"); later(300, onReady); return; }
-      lighting("dim", 900); setScreen("standby"); SFX.drumroll(3.4);
+      lighting("dim", 900); setScreen("standby"); Music.duck(0, 1.2);
       later(1200, () => { tween(backLight, "intensity", 18, 600); tween(doorSpill, "intensity", 30, 600); glowMat.color.setHex(THEMES.classic.backlight).multiplyScalar(3); SFX.whoosh(); doors(true, 1300); });
       later(2200, () => walkTo(INSIDE.x, INSIDE.z, 1400));
-      later(3550, () => { SFX.crash(); SFX.clunk(); key.intensity = LIT.show.key * 1.3; tween(key, "intensity", LIT.show.key, 900); tween(st, "sil", 0, 260); setScreen("reveal"); });
+      later(3550, () => { SFX.arrive(); Music.start(); Music.duck(1, 4); key.intensity = LIT.show.key * 1.3; tween(key, "intensity", LIT.show.key, 900); tween(st, "sil", 0, 260); setScreen("reveal"); });
       later(3750, () => { lighting("show", 1400); walkTo(MARK.x, MARK.z, 2700, () => { if (MODEL.ready) onceClip("Bow"); }); });
       later(4600, () => { doors(false, 1200); tween(backLight, "intensity", 0, 1200); tween(doorSpill, "intensity", 0, 1200); later(1200, () => glowMat.color.setScalar(0)); });
       later(5600, () => setShot("mid"));
@@ -1011,8 +1065,8 @@ function speakLines(raw, item, onDone) {
     onSentence(i) {
       Captions.start(raw[i]);
       if (R) {
-        R.mood(UNEASY.test(plainS[i]) || (item && item.risk && i > 0) ? "uneasy" : "confident");
-        R.highlightFor(plainS[i]); R.push(/\d/.test(plainS[i]));
+        R.mood(UNEASY.test(plainS[i]) || (item && item.risk && i > 0) ? "uneasy" : "confident"); Music.duck(item && item.risk ? .35 : 1, 2);
+        R.highlightFor(plainS[i]); R.push(/\d/.test(plainS[i])); if (i > 0 && /\$\d|\d%/.test(plainS[i]) && !(item && item.risk)) R.present();
       }
       $("tx-body").querySelectorAll(".sent").forEach(s => s.classList.toggle("now", Number(s.dataset.i) === i));
     },
@@ -1027,7 +1081,7 @@ function present(item, typed, simple, reaction, onDone) {
   $("tx-title").textContent = item.q; $("tx-body").innerHTML = raw.map((p, i) => `<span class="sent" data-i="${i}">${tokenize(p).map(renderTok).join(" ")}</span>`).join(" ");
   $("tx-src").innerHTML = item.src ? `<b>Sources</b> (verified ${VERIFIED}): ` + item.src.map(s => `<a href="${s.url}" target="_blank" rel="noopener">NVIDIA ${s.label}</a>${s.section ? `, ${esc(s.section)}` : ""}`).join("; ")
     + (item.calc ? `<br><b>Our calculations from reported figures:</b> ${item.calc.map(esc).join("; ")}` : "") : "";
-  if (R && item.visual) R.setScreen("visual", item.visual, "NVIDIA " + item.src[0].label);
+  if (R && item.visual) R.setScreen("visual", item.visual, "NVIDIA " + item.src[0].label, item.calc);
   R && R.perform(item);
   if (item.card && item.id !== "hook") addNote(item);
   speakLines(raw, item, onDone);
@@ -1035,7 +1089,7 @@ function present(item, typed, simple, reaction, onDone) {
 function sayLine(line) { current = { item: { q: "Rex", a: line }, raw: [line] }; $("tx-title").textContent = "Rex"; $("tx-body").textContent = line; $("tx-src").textContent = ""; R && R.setShot("rex"); speakLines(splitSentences(line), null); }
 function addNote(q) { if (S.notes.some(n => n.id === q.id)) return; S.notes.push({ id: q.id, s: q.s, big: q.note || q.card[0] }); save(); R && R.drawNotes(); }
 function reactionFor(typed) { if (CHALLENGE.test(typed)) return pick(REACT.challenge); if (POSITIVE.test(typed)) return pick(REACT.positive); return Math.random() < .45 ? pick(REACT.neutral) : null; }
-$("btn-replay").addEventListener("click", () => { if (!current || busy) return; if (current.item.visual && R) { R.setScreen("visual", current.item.visual, "NVIDIA " + current.item.src[0].label); R.perform(current.item); } speakLines(current.raw, current.item); });
+$("btn-replay").addEventListener("click", () => { if (!current || busy) return; if (current.item.visual && R) { R.setScreen("visual", current.item.visual, "NVIDIA " + current.item.src[0].label, current.item.calc); R.perform(current.item); } speakLines(current.raw, current.item); });
 $("btn-transcript").addEventListener("click", () => { if (current) openPanel("m-transcript"); });
 
 // ask box: rotating suggestions, listen pose, interrupt
@@ -1048,7 +1102,7 @@ $("ask-input").addEventListener("input", () => {
 });
 $("ask-form").addEventListener("submit", e => { e.preventDefault(); ask($("ask-input").value.trim()); });
 // Act 2 opens with Rex asking you something; mid-grilling he flips it back on you
-function act2() { if (busy || S.decided || S.skipped) return; SFX.stinger("act2"); R && R.act(2); later2(800, () => { if (busy) return; pending = "goodbad"; sayLine(LINES.goodBad); }); }
+function act2() { if (busy || S.decided || S.skipped) return; R && R.act(2); later2(800, () => { if (busy) return; pending = "goodbad"; sayLine(LINES.goodBad); }); }
 function maybeWorry() { if (worryAsked || S.asked.length < 3) return; worryAsked = true; later2(1300, () => { if (Voice.talking || busy || S.decided) return; pending = "worry"; sayLine(LINES.worry); }); }
 // suggestion chips: shown when Rex needs you to pick, or a question is outside what he prepared
 function suggest(list) {
@@ -1098,7 +1152,7 @@ $("btn-decide").addEventListener("click", () => {
   if (!S.asked.includes("risk")) { toast("Ask what could go wrong first."); $("ask-input").focus(); return; }
   $("covered").innerHTML = PITCH.questions.map(q => `<span class="${S.asked.includes(q.id) ? "yes" : ""}">${q.s}</span>`).join("");
   $("decide-notes").innerHTML = notesHTML(); $("avail").textContent = fmtUSD(START - committed()) + " available";
-  $("offer-msg").textContent = ""; Voice.stop(); Captions.clear(); openPanel("m-decide"); R && R.act(3); R && R.setShot("rex"); SFX.stinger("verdict"); SFX.tension(true);
+  $("offer-msg").textContent = ""; Voice.stop(); Captions.clear(); openPanel("m-decide"); R && R.act(3); R && R.setShot("rex"); Music.duck(0, 1.5);   // a moment of quiet for the decision
 });
 document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => { $("offer-amount").value = Number(c.dataset.amt).toLocaleString("en-US"); }));
 $("offer-form").addEventListener("submit", e => {
@@ -1113,7 +1167,7 @@ $("offer-form").addEventListener("submit", e => {
 $("btn-out").addEventListener("click", () => { S.decided = "out"; save(); wrapUp("You're out on NVIDIA.", false); });
 function wrapUp(text, bow) {
   SFX.tension(false); closePanels(); busy = true; R && R.act(2); const line = bow ? LINES.deal : LINES.noDeal;
-  if (bow) { SFX.stinger("deal"); SFX.applause(2.8); } else SFX.stinger("nodeal");
+  if (bow) SFX.confirm(); else SFX.pass(); later2(2500, () => Music.duck(1, 3));
   speakLines(splitSentences(line), null);
   const done = () => nextPitch(text);
   R ? R.exit(bow, done) : setTimeout(done, 1500);

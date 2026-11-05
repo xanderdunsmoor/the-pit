@@ -12,7 +12,7 @@ for o in bpy.data.objects:
     if o.type=='MESH':
         for vg in o.vertex_groups: vg.name=strip(vg.name)
 for a in list(bpy.data.actions): bpy.data.actions.remove(a)
-ANIMS={'Idle':'Weight Shift Idle','Idle2':'Standing Idle','Walk':'Male Standard Walk','Talk1':'Asking A Question With Two Hands','Talk2':'Asking A Question With One Hand','Talk3':'General Conversation','Point':'Pointing With Arm Bent','Bow':'Quick Formal Bow','Victory':'Celebrating After A Win','Defeat':'Showing Frustration After A Loss','Think':'Thinking While Standing','Shrug':'Shoulder Shrug','Nod':'Nodding Head Yes'}
+ANIMS={'Idle':'Weight Shift Idle','Idle2':'Standing Idle','Walk':'Male Standard Walk','Talk1':'Asking A Question With Two Hands','Talk2':'Asking A Question With One Hand','Talk3':'General Conversation','Point':'Pointing With Arm Bent','Bow':'Quick Formal Bow','Victory':'Celebrating After A Win','Defeat':'Showing Frustration After A Loss','Think':'Thinking While Standing','Shrug':'Shoulder Shrug','Nod':'Nodding Head Yes','Talk4':'rex-talk4','Talk5':'rex-talk5','Present':'rex-present','Ack':'rex-ack','Idle3':'rex-idle3','Idle4':'rex-idle4'}
 for name,f in ANIMS.items():
     before=set(bpy.data.objects); bpy.ops.import_scene.fbx(filepath=D+f+'.fbx')
     new=[o for o in bpy.data.objects if o not in before]
