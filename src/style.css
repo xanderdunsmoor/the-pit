@@ -151,3 +151,13 @@ html, body { margin: 0; height: 100%; }
 .askbar { transition: opacity .6s ease; }
 body.speaking .askbar:not(:focus-within):not(:hover) { opacity: .55; }
 .chip-ai { opacity: .75; }
+
+/* minimal bar: no drop shadow, hairline border, buttons as text until hovered, mic is just an icon */
+.askbar { width: min(760px, 100%); background: rgba(10, 9, 8, .58); border-color: rgba(201, 164, 92, .14); box-shadow: none; }
+.askbar:not(:hover):not(:focus-within) { opacity: .82; }
+body.speaking .askbar:not(:focus-within):not(:hover) { opacity: .4; }
+#btn-mic { background: transparent; color: #d9d2c4; }
+.askbar .btn { border-color: transparent; color: #d9d2c4; padding: 9px 14px; }
+.askbar .btn:hover:not(:disabled) { border-color: rgba(201, 164, 92, .4); }
+.askbar #btn-decide:not(.locked) { background: transparent; color: var(--accent); border-color: rgba(201, 164, 92, .55); }
+.cashchip, .chip-ai, .topbar .icon { background: rgba(10, 9, 8, .45); border-color: rgba(201, 164, 92, .16); }

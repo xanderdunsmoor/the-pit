@@ -8,6 +8,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { interpret } from "./matcher.js";
 import { VERIFIED, SRC_Q, SRC_K, GLOSSARY, PITCH, REACT, CHALLENGE, POSITIVE, LINES, glossaryLine, cardLine, splitSentences, plain, forSpeech, lineId } from "./content.js";
@@ -16,7 +17,7 @@ import { VERIFIED, SRC_Q, SRC_K, GLOSSARY, PITCH, REACT, CHALLENGE, POSITIVE, LI
 'use strict';
 // ================= PRELOAD: everything loads behind a veil, then the room fades in =================
 const SFX_FILES = { step_wood: ["footstep_wood_000", "footstep_wood_001", "footstep_wood_002", "footstep_wood_003", "footstep_wood_004"], step_concrete: ["footstep_concrete_000", "footstep_concrete_001", "footstep_concrete_002", "footstep_concrete_003", "footstep_concrete_004"], squish: ["impactSoft_medium_000", "impactSoft_medium_001", "impactSoft_medium_002"], glass: ["impactGlass_light_000", "impactGlass_light_001", "impactGlass_light_002"], clunk: ["impactMetal_heavy_000"], door: ["impactPlank_medium_000", "impactWood_heavy_000"], tick: ["impactWood_light_000", "impactWood_light_001", "impactWood_light_002"], bell: ["impactBell_heavy_000"] };
-const TEX_FILES = ["floor_diff", "floor_nor_gl", "floor_rough", "velvet_diff", "velvet_nor_gl", "velvet_rough", "metal_diff", "metal_nor_gl", "metal_rough", "floor_ao", "walnut_diff", "walnut_nor_gl", "walnut_rough", "veneer_diff", "veneer_nor_gl", "veneer_rough", "parquet_diff", "parquet_nor_gl", "parquet_rough", "leather_diff", "leather_nor_gl", "leather_rough"];
+const TEX_FILES = ["velvet_diff", "walnut_diff", "walnut_nor_gl", "walnut_rough", "parquet_diff", "leather_diff", "leather_nor_gl", "leather_rough"];
 const ASSETS = { glb: null, room: null, investors: {}, sfx: {}, tex: {}, lm: {}, lmScale: {}, env: null, voice: null, voiceRaw: {} };
 const veilBar = document.getElementById("veil-bar");
 async function preload() {
@@ -25,10 +26,14 @@ async function preload() {
   add(fetch("models/rex.json").then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const b = atob(j.glb); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); ASSETS.glb = u.buffer; }));
   add(fetch("models/boardroom.json").then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const b = atob(j.glb); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); ASSETS.room = u.buffer; }));
   add(fetch("tex/lightmaps.json").then(r => r.ok ? r.json() : null).then(j => { if (j) Object.entries(j).forEach(([k, v]) => { ASSETS.lmScale[k] = v.scale; }); }));
-  ["Floor", "Walls", "Ceiling"].forEach(n => add(new THREE.TextureLoader().loadAsync(`tex/lm_${n}.png`).then(t => { ASSETS.lm[n] = t; })));
+  /* GPU-compressed textures (KTX2/Basis): about a quarter of the video memory of JPG/PNG. Falls back to the JPG/PNG if the device can't transcode. */
+  let ktx = null; try { const probe = new THREE.WebGLRenderer(); ktx = new KTX2Loader().setTranscoderPath("basis/").detectSupport(probe); probe.dispose(); probe.forceContextLoss(); } catch (e) { ktx = null; }
+  /* the host only serves web types, so each .ktx2 ships base64 inside JSON */
+  const ktxFrom = base => fetch(`${base}.ktx2.json`).then(r => { if (!r.ok) throw 0; return r.json(); }).then(j => { const b = atob(j.ktx2), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new Promise((res, rej) => ktx.parse(u.buffer, res, rej)); }).then(t => { ASSETS.ktxCount = (ASSETS.ktxCount || 0) + 1; return t; });
+  const loadTex = (base, ext) => (ktx ? ktxFrom(base) : Promise.reject()).catch(() => new THREE.TextureLoader().loadAsync(`${base}.${ext}`));
+  ["Floor", "Walls", "Ceiling"].forEach(n => add(loadTex(`tex/lm_${n}`, "png").then(t => { ASSETS.lm[n] = t; })));
   Object.entries(SFX_FILES).forEach(([k, list]) => list.forEach(f => add(fetch(`sfx/${f}.mp3`).then(r => r.ok ? r.arrayBuffer() : null).then(b => { if (b) (ASSETS.sfx[k] = ASSETS.sfx[k] || []).push(b); }))));
-  const TL = new THREE.TextureLoader();
-  TEX_FILES.forEach(n => add(TL.loadAsync(`tex/${n}.jpg`).then(t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; if (n.endsWith("diff")) t.colorSpace = THREE.SRGBColorSpace; ASSETS.tex[n] = t; })));
+  TEX_FILES.forEach(n => add(loadTex(`tex/${n}`, "jpg").then(t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; if (n.endsWith("diff")) t.colorSpace = THREE.SRGBColorSpace; ASSETS.tex[n] = t; })));
   // studio HDR, stored as RGBE in a PNG (mantissas on top, exponent below) because the host only serves web image types
   add(new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = "env/studio-rgbe.png"; }).then(im => {
     const c = document.createElement("canvas"); c.width = im.width; c.height = im.height; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0);
@@ -38,7 +43,7 @@ async function preload() {
   }));
   add(fetch("voice/index.json").then(r => r.ok ? r.json() : null).then(j => { if (!j) return; ASSETS.voice = j; ASSETS.voiceRaw = {}; return Promise.all(Object.keys(j.lines).map(id => fetch(`voice/${id}.mp3`).then(r => r.ok ? r.arrayBuffer() : null).then(b => { if (b) ASSETS.voiceRaw[id] = b; }))); }));
   if (document.fonts && document.fonts.load) ["800 40px 'Bricolage Grotesque'", "700 20px 'Bricolage Grotesque'", "400 20px Lexend", "500 20px Lexend", "700 20px Lexend", "600 20px Caveat"].forEach(f => add(document.fonts.load(f)));
-  await Promise.all(jobs);
+  await Promise.all(jobs); if (ktx) ktx.dispose();
 }
 await preload();
 const DBG = []; const dbg = m => { DBG.push(String(m)); if (location.hash === '#debug') { let d = document.getElementById('dbg'); if (!d) { d = document.createElement('pre'); d.id = 'dbg'; d.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;max-width:60vw;white-space:pre-wrap;background:#000c;color:#0f0;font:11px monospace;padding:6px;pointer-events:none'; document.body.appendChild(d); } d.textContent = DBG.join('\n'); } };
@@ -1012,7 +1017,7 @@ function initGL(hooks) {
     perf.frames++; perf.worst = Math.max(perf.worst, dt * 1000); perf.calls = renderer.info.render.calls; perf.tris = renderer.info.render.triangles; renderer.info.reset();
     if (!perf.on || t - perf.t0 < 500) return;
     const fps = perf.frames * 1000 / (t - perf.t0), mem = performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) + " MB" : "n/a", m = renderer.info.memory;
-    perf.el.textContent = `fps ${fps.toFixed(0)}   worst ${perf.worst.toFixed(0)} ms\ndraw calls ${perf.calls}   triangles ${(perf.tris / 1000).toFixed(0)}k\ngeometries ${m.geometries}   textures ${m.textures}\nJS heap ${mem}   voice clips decoded ${Object.keys(VBUF).length}\nquality ${quality}   pixel ratio ${dpr}`;
+    perf.el.textContent = `fps ${fps.toFixed(0)}   worst ${perf.worst.toFixed(0)} ms\ndraw calls ${perf.calls}   triangles ${(perf.tris / 1000).toFixed(0)}k\ngeometries ${m.geometries}   textures ${m.textures}\nJS heap ${mem}   voice clips decoded ${Object.keys(VBUF).length}\nquality ${quality}   pixel ratio ${dpr}   compressed tex ${ASSETS.ktxCount || 0}/11`;
     perf.frames = 0; perf.worst = 0; perf.t0 = t;
   }
   // the original stylised rig, kept as a fallback when the character model is unavailable
