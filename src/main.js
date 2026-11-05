@@ -747,9 +747,11 @@ function initGL(hooks) {
       g.fillStyle = GOLD; g.fillRect(w / 2 - 80 * p, h / 2 + 70, 160 * p, 2); caps("Nasdaq · NVDA · Investor presentation", w / 2, h / 2 + 120, 22, SUB, "center"); g.globalAlpha = 1; g.textAlign = "left"; return;
     }
     const v = sc.visual; if (!v) return; const bp = smoother(Math.min(1, (now() - sc.buildStart) / 1100));
+    /* shrink a line until it fits inside the visible screen, never clip it */
+    const fit = (t, maxW, weight, size) => { let s = size; g.font = `${weight} ${s}px 'Lexend', sans-serif`; while (s > 14 && g.measureText(t).width > maxW) { s -= 1; g.font = `${weight} ${s}px 'Lexend', sans-serif`; } };
     g.fillStyle = GOLD; g.fillRect(64, 44, 36, 3);
     caps(sc.src || "NVIDIA", 112, 52, 16, SUB);
-    g.fillStyle = INK; g.font = "600 46px 'Lexend', sans-serif"; g.fillText(v.take || v.title, 64, 118);
+    g.fillStyle = INK; fit(v.take || v.title, w - 64 - 110, 600, 46); g.fillText(v.take || v.title, 64, 118);
     g.fillStyle = SUB; g.font = "400 23px 'Lexend', sans-serif"; g.fillText(v.title, 64, 156);
     const fmt = val => v.unit === "%" ? (Number.isInteger(val) ? Math.round(val) : val.toFixed(1)) + "%" : fmtB(val);
     if (v.type === "bars") {
@@ -777,7 +779,7 @@ function initGL(hooks) {
     } else {
       v.items.forEach((t, i) => { const y = 250 + i * 98; if (bp * v.items.length <= i * .8) return; const lit = sc.hl === i;
         g.fillStyle = lit ? GOLD : FAINT; g.font = "600 34px 'Lexend', sans-serif"; g.fillText(String(i + 1).padStart(2, "0"), 64, y);
-        g.fillStyle = lit ? INK : "#c3cad6"; g.font = (lit ? "500" : "400") + " 32px 'Lexend', sans-serif"; g.fillText(t, 140, y);
+        g.fillStyle = lit ? INK : "#c3cad6"; fit(t, w - 140 - 110, lit ? 500 : 400, 32); g.fillText(t, 140, y);
         g.fillStyle = lit ? "rgba(201,164,92,.55)" : "#1f2a3d"; g.fillRect(140, y + 24, w - 204, 1); });
     }
     g.fillStyle = "#1f2a3d"; g.fillRect(64, h - 76, w - 128, 1);
@@ -811,7 +813,7 @@ function initGL(hooks) {
   function shotTarget() {
     const hx = rex.position.x, hz = rex.position.z;
     switch (shot.name) {
-      case "rex": return tgt4(hx, 1.45, hz, baseFov * .34 * shot.push);
+      case "rex": return tgt4(hx, 1.5, hz, baseFov * .24 * shot.push);
       case "mid": return tgt4(hx * .75, 1.4, hz + .5, baseFov * .5);
       case "two": return tgt4(hx * .55 + SCREEN_POS.x * .45, 1.62, hz * .55 + SCREEN_POS.z * .45, baseFov * .6);
       case "screen": return tgt4(SCREEN_POS.x, SCREEN_POS.y, SCREEN_POS.z, baseFov * .5);
@@ -831,13 +833,17 @@ function initGL(hooks) {
   // ----- studio reflections and camera polish: light glow, depth blur in close-ups, vignette -----
   const pmrem = new THREE.PMREMGenerator(renderer);
   try { scene.environment = ASSETS.env ? pmrem.fromEquirectangular(ASSETS.env).texture : pmrem.fromScene(new RoomEnvironment(), .04).texture; scene.environmentIntensity = ASSETS.env ? .45 : 1; } catch (e) {}
-  let composer = null, bokeh = null, bloom = null, filmPass = null;
+  let outPassRef = null; let composer = null, bokeh = null, bloom = null, filmPass = null;
   try {
     const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 });
     composer = new EffectComposer(renderer, rt); composer.setPixelRatio(dpr);
     composer.addPass(new RenderPass(scene, camera));
     bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), .32, .5, 1.5); composer.addPass(bloom);
-    const out = new OutputPass(); composer.addPass(out);
+    const out = new OutputPass(); composer.addPass(out); outPassRef = out;
+    /* contrast-adaptive sharpening: crisper faces, fabric and type without halos (strength backs off on already-contrasty pixels) */
+    out.material.uniforms.texel = { value: new THREE.Vector2(1 / 1280, 1 / 720) };
+    out.material.fragmentShader = out.material.fragmentShader.replace("uniform sampler2D tDiffuse;", "uniform sampler2D tDiffuse; uniform vec2 texel;").replace("gl_FragColor = texture2D( tDiffuse, vUv );",
+      "gl_FragColor = texture2D( tDiffuse, vUv ); { vec3 c0 = gl_FragColor.rgb; vec3 sn = texture2D( tDiffuse, vUv + vec2( 0.0, texel.y ) ).rgb, ss = texture2D( tDiffuse, vUv - vec2( 0.0, texel.y ) ).rgb, se = texture2D( tDiffuse, vUv + vec2( texel.x, 0.0 ) ).rgb, sw = texture2D( tDiffuse, vUv - vec2( texel.x, 0.0 ) ).rgb; vec3 mn = min( c0, min( min( sn, ss ), min( se, sw ) ) ), mx = max( c0, max( max( sn, ss ), max( se, sw ) ) ); vec3 amp = sqrt( clamp( min( mn, 1.0 - mx ) / max( mx, vec3( 1e-4 ) ), 0.0, 1.0 ) ); vec3 wt = -amp * .14; gl_FragColor.rgb = max( ( c0 + ( sn + ss + se + sw ) * wt ) / ( 1.0 + 4.0 * wt ), 0.0 ); }");
     /* vignette + colour grade folded into the output pass: warm midtones, slightly cool shadows, gentle film contrast, lifted blacks */
     out.material.fragmentShader = out.material.fragmentShader.replace(/(gl_FragColor = sRGBTransferOETF\( gl_FragColor \);\s*#endif)/, "$1\n vec3 c = gl_FragColor.rgb; vec2 vd = ( vUv - .5 ) * .95; c *= clamp( 1.0 - dot( vd, vd ) * .8, 0.0, 1.0 ); float l = dot( c, vec3( .2126, .7152, .0722 ) ); float sh = ( 1.0 - l ) * ( 1.0 - l ); float mid = 4.0 * l * ( 1.0 - l ); c *= mix( vec3( 1.0 ), vec3( .95, .99, 1.05 ), sh * .7 ); c *= mix( vec3( 1.0 ), vec3( 1.035, 1.0, .955 ), mid ); c = clamp( c, 0.0, 1.0 ); c = mix( c, c * c * ( 3.0 - 2.0 * c ), .16 ); c = mix( vec3( l ), c, .96 ); gl_FragColor.rgb = c * .985 + .012;");
     if (!/vec3 c = gl_FragColor/.test(out.material.fragmentShader)) dbg("grade not applied");
@@ -849,7 +855,7 @@ function initGL(hooks) {
   } catch (e) { composer = null; dbg("composer " + e.message); }
   /* skin: light bleeds a little past the shadow line in red (how real skin scatters light), pores break up the highlight */
   function skinMaterial(src) {
-    const mat = new THREE.MeshPhysicalMaterial({ map: src.map, normalMap: src.normalMap, color: src.color, roughness: .5, metalness: 0, sheen: .18, sheenColor: new THREE.Color(0xb86a58), sheenRoughness: .6, envMapIntensity: .45, specularIntensity: .7 });
+    const mat = new THREE.MeshPhysicalMaterial({ map: src.map, normalMap: src.normalMap, color: src.color, roughness: .5, metalness: 0, envMapIntensity: .45, specularIntensity: .7 });
     mat.name = src.name + "_skin";
     mat.onBeforeCompile = sh => {
       sh.uniforms.poreMap = { value: poreTex };
@@ -867,8 +873,7 @@ function initGL(hooks) {
   const hairCache = new Map();
   function hairMaterial(src) {
     if (hairCache.has(src)) return hairCache.get(src);
-    const mat = new THREE.MeshPhysicalMaterial({ map: src.map, normalMap: src.normalMap, color: src.color, alphaTest: .3, alphaToCoverage: true, transparent: false, side: THREE.DoubleSide, roughness: .48, metalness: 0,
-      specularIntensity: .45, sheen: .45, sheenColor: new THREE.Color(0x7a5a44), sheenRoughness: .35, envMapIntensity: .35 });
+    const mat = new THREE.MeshStandardMaterial({ map: src.map, normalMap: src.normalMap, color: src.color, alphaTest: .3, alphaToCoverage: true, transparent: false, side: THREE.DoubleSide, roughness: .5, metalness: 0, envMapIntensity: .45 });
     mat.name = src.name + "_hair"; hairCache.set(src, mat); return mat;
   }
   function softenEnv() { scene.traverse(o => { if (o.material && o.material.isMeshStandardMaterial && !o.material.userData.envSet) { if (!(o.material.envMapIntensity < 1)) o.material.envMapIntensity = o.material.metalness > .5 ? 1 : .5; o.material.userData.envSet = true; } }); }
@@ -876,7 +881,7 @@ function initGL(hooks) {
   function resize() {
     const r = stage.getBoundingClientRect(); const w = Math.max(1, r.width), h = Math.max(1, r.height);
     renderer.setSize(w, h, false); camera.aspect = w / h;
-    if (composer) { composer.setPixelRatio(dpr); composer.setSize(w, h); }
+    if (composer) { composer.setPixelRatio(dpr); composer.setSize(w, h); } if (outPassRef) outPassRef.material.uniforms.texel.value.set(1 / (w * dpr), 1 / (h * dpr));
     baseFov = camera.aspect >= 1.3 ? 45 : Math.min(80, 2 * Math.atan(Math.tan(30 * Math.PI / 180) / camera.aspect) * 180 / Math.PI);
     camera.updateProjectionMatrix();
   }
@@ -919,11 +924,14 @@ function initGL(hooks) {
     const lo = q === 0; renderer.shadowMap.type = lo ? THREE.PCFShadowMap : THREE.PCFShadowMap; key.shadow.mapSize.set(lo ? 1024 : 2048, lo ? 1024 : 2048); if (key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; }
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true; }); resize(); frameAvg = 16; slowFor = fastFor = 0;
   }
+  /* ignore the first 12 s (shaders compiling, investors arriving); step down after sustained slowness; step back up once if there's headroom, never ping-pong */
+  const adaptFrom = performance.now() + 12000; let steppedUp = false, lockedUp = false;
   function adapt(dt) {
+    if (performance.now() < adaptFrom) return;
     frameAvg = frameAvg * .95 + dt * 1000 * .05;
-    if (frameAvg > 24) { slowFor += dt; fastFor = 0; } else if (frameAvg < 15) { fastFor += dt; slowFor = Math.max(0, slowFor - dt); } else { slowFor = Math.max(0, slowFor - dt * .5); fastFor = 0; }
-    if (slowFor > 2.5 && quality > 0) setQuality(quality - 1);
-    else if (fastFor > 10 && quality < 2) setQuality(quality + 1);
+    if (frameAvg > 24) { slowFor += dt; fastFor = 0; } else if (frameAvg < (quality === 1 ? 16.5 : 15)) { fastFor += dt; slowFor = Math.max(0, slowFor - dt); } else { slowFor = Math.max(0, slowFor - dt * .5); fastFor = 0; }
+    if (slowFor > (quality === 1 ? 6 : 4) && quality > 0 && (quality === 2 || frameAvg > 34)) { if (steppedUp) lockedUp = true; setQuality(quality - 1); }
+    else if (fastFor > 10 && quality < 2 && !lockedUp) { steppedUp = true; setQuality(quality + 1); }
   }
 
   // ----- per-frame -----
