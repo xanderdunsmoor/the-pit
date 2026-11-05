@@ -401,6 +401,19 @@ function initGL(hooks) {
 
   // desk items: each is a group; clickable meshes point at their group
   const _bx = new THREE.Box3(); const TOP = .76; const deskItems = new THREE.Group(); scene.add(deskItems); const clickables = [];
+  const SEATED = [["louise", -1.0, .05, 1], ["josh", 1.0, 1.25, -1], ["martha", -1.0, -1.15, 1]];
+  /* table dressing: a closed leather folder, pen and water glass at each investor's place, a carafe mid-table. Lived-in, not staged-empty. */
+  { const props = new THREE.Group(); scene.add(props);
+    const glassM = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: .16, roughness: .04, metalness: 0, clearcoat: 1, clearcoatRoughness: .03, envMapIntensity: 1.6, depthWrite: false, side: THREE.DoubleSide });
+    const waterM = new THREE.MeshPhysicalMaterial({ color: 0xbfd2d6, transparent: true, opacity: .22, roughness: .02, metalness: 0, envMapIntensity: 1.2, depthWrite: false });
+    const penM = std(0x101012, { roughness: .3 });
+    const glass = (x, z, h = .11, r = .033) => { const g = cyl(r, r * .88, h, glassM, x, TOP + h / 2, z, props, 20); g.castShadow = false; g.renderOrder = 2; const w = cyl(r * .9, r * .8, h * .55, waterM, x, TOP + h * .28, z, props, 20); w.castShadow = false; w.renderOrder = 2; };
+    SEATED.forEach(([n, x, z, face], i) => { const px = x + face * .48, side = -face;
+      const f = box(.24, .012, .32, M_LIVE.leather, px, TOP + .006, z - .02, props); f.rotation.y = (i - 1) * .06;
+      const pen = cyl(.0045, .0045, .14, penM, px + side * -.15, TOP + .005, z - .02, props, 8); pen.rotation.set(Math.PI / 2, 0, .25 * side);
+      glass(px + side * -.02, z + .24); });
+    const car = cyl(.045, .06, .22, glassM, -.05, TOP + .11, .5, props, 24); car.castShadow = false; car.renderOrder = 2;
+    const cw = cyl(.05, .055, .13, waterM, -.05, TOP + .065, .5, props, 24); cw.castShadow = false; cw.renderOrder = 2; }
   const glassMat = () => new THREE.MeshStandardMaterial({ color: 0xdff0ff, transparent: true, opacity: .25, roughness: .05, side: THREE.DoubleSide });
   const notesCanvas = document.createElement("canvas"); notesCanvas.width = 512; notesCanvas.height = 680;
   const notesTex = new THREE.CanvasTexture(notesCanvas); notesTex.colorSpace = THREE.SRGBColorSpace; notesTex.anisotropy = 8;
@@ -650,7 +663,6 @@ function initGL(hooks) {
   }
   // ----- silent investors at the table (Mixamo characters, seated idle); they glance at Rex now and then but never speak or react -----
   const investors = [];
-  const SEATED = [["louise", -1.0, .05, 1], ["josh", 1.0, 1.25, -1], ["martha", -1.0, -1.15, 1]];
   function loadInvestors() { SEATED.forEach(([n, x, z, face], idx) => fetch(`models/inv_${n}.json`).then(r => r.ok ? r.json() : null).then(j => { if (!j) return;
     const b = atob(j.glb); const buf = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) buf[i] = b.charCodeAt(i);
     new GLTFLoader().parse(buf.buffer, "", g => {
