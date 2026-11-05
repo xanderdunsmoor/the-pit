@@ -8,7 +8,6 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { VignetteShader } from "three/addons/shaders/VignetteShader.js";
 import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { interpret } from "./matcher.js";
 import { VERIFIED, SRC_Q, SRC_K, GLOSSARY, PITCH, REACT, CHALLENGE, POSITIVE, LINES, glossaryLine, cardLine, splitSentences, plain, forSpeech, lineId } from "./content.js";
@@ -433,7 +432,7 @@ function initGL(hooks) {
   const key = new THREE.SpotLight(0xffd9a8, 0, 24, .42, .5, 2); key.position.set(.5, 3.32, -1.2); key.target.position.set(MARK.x, 0, MARK.z); key.angle = .55;
   key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0002; key.shadow.normalBias = .02; key.shadow.radius = 3; key.shadow.camera.near = 1; key.shadow.camera.far = 12; scene.add(key, key.target);
   const fill = new THREE.DirectionalLight(0xffe6cc, .55); fill.position.set(-1, 2.5, 4); scene.add(fill);
-  const rim = new THREE.SpotLight(0xffffff, 12, 16, .6, .7, 2); rim.position.set(.9, 3.3, -5.3); rim.target.position.set(MARK.x, 1.3, MARK.z); scene.add(rim, rim.target);
+  const rim = new THREE.SpotLight(0xe4ecff, 20, 16, .5, .8, 2); rim.position.set(.9, 3.3, -5.3); rim.target.position.set(MARK.x, 1.3, MARK.z); scene.add(rim, rim.target);
   const deskLamp = new THREE.PointLight(0xffd2a0, 1.1, 3, 2); deskLamp.position.set(0, 1.5, 2.6); scene.add(deskLamp);
   const canLights = []; const canMat = new THREE.MeshBasicMaterial({ color: 0 }); const CAN = new THREE.Color(0);
   const themeGroup = new THREE.Group(); scene.add(themeGroup); const strips = [], themeLights = [];
@@ -506,10 +505,17 @@ function initGL(hooks) {
     bone.parent.getWorldQuaternion(_q3); _q3.invert().multiply(_q1); bone.quaternion.copy(_q3); bone.updateMatrixWorld(true);
   }
   // soft contact shadows: a blurred dark disc under anything that touches the ground
+  const poreTex = (() => { const n = 256, d = new Uint8Array(n * n * 4), h = new Float32Array(n * n), r = rnd(7);
+    for (let i = 0; i < 2600; i++) { const cx = r() * n, cy = r() * n, rad = 1 + r() * 1.6; for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) { const q = Math.hypot(x, y) / rad; if (q < 1) { const X = (Math.floor(cx) + x + n) % n, Y = (Math.floor(cy) + y + n) % n; h[Y * n + X] -= (1 - q * q); } } }
+    for (let i = 0; i < n * n; i++) h[i] += (r() - .5) * .25;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const H = (a, b) => h[((b + n) % n) * n + (a + n) % n]; const dx = H(x + 1, y) - H(x - 1, y), dy = H(x, y + 1) - H(x, y - 1), o = (y * n + x) * 4; d[o] = 128 + Math.max(-127, Math.min(127, dx * 60)); d[o + 1] = 128 + Math.max(-127, Math.min(127, dy * 60)); d[o + 2] = 128 + Math.max(-127, Math.min(127, -H(x, y) * 70)); d[o + 3] = 255; }
+    const t = new THREE.DataTexture(d, n, n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 4; t.needsUpdate = true; return t; })();
   const blobTex = canvasTex(128, 128, (g, w) => { const gr = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2); gr.addColorStop(0, "rgba(0,0,0,.6)"); gr.addColorStop(.55, "rgba(0,0,0,.25)"); gr.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = gr; g.fillRect(0, 0, w, w); });
   const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   const blob = r => { const b = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), blobMat); b.rotation.x = -Math.PI / 2; b.renderOrder = 1; return b; };
   const rexBlob = blob(.42); rexBlob.material = blobMat.clone(); scene.add(rexBlob);
+  /* tight dark contact under each shoe: what makes a figure feel planted on the floor */
+  const footMat = blobMat.clone(); footMat.opacity = .95; const footBlobs = [0, 1].map(() => { const b = new THREE.Mesh(new THREE.PlaneGeometry(.17, .3), footMat); b.rotation.x = -Math.PI / 2; b.renderOrder = 1; scene.add(b); return b; });
   const BLEND = .5;
   const GD = { beatAt: 0, prevOpen: 0, acked: false, next: 0, last: "", idleSwap: now() + 20000, layerAt: 0, glance: new THREE.Vector2(), glanceAt: 0, look: new THREE.Vector2() };
   if (ASSETS.glb) new GLTFLoader().parse(ASSETS.glb.slice(0), "", g => {
@@ -519,7 +525,7 @@ function initGL(hooks) {
       rex.add(m); m.updateMatrixWorld(true);
       const modelMats = [];
       m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; const mm = o.material; mm.metalness = 0; mm.metalnessMap = null; mm.roughnessMap = null; mm.roughness = /hair|lash/i.test(o.name) ? .6 : .82; mm.envMapIntensity = .55; if (/hair|lash/i.test(o.name)) { mm.alphaTest = .45; mm.transparent = false; mm.side = THREE.DoubleSide; } if (!modelMats.includes(mm)) modelMats.push(mm); } });
-      m.traverse(o => { if (o.isMesh && /Body/.test(o.name) && !/Shoes|Pants|Suit|Shirt|Tie|Belt/.test(o.name)) { const src = o.material; o.material = new THREE.MeshPhysicalMaterial({ map: src.map, normalMap: src.normalMap, color: src.color, roughness: .52, metalness: 0, sheen: .35, sheenColor: new THREE.Color(0xd8735c), sheenRoughness: .55, envMapIntensity: .5 }); o.material.name = src.name + "_skin"; }
+      m.traverse(o => { if (o.isMesh && /Body/.test(o.name) && /Ch33_body/i.test(o.material.name)) { const src = o.material; o.material = skinMaterial(src); }
         if (o.isMesh && /hair|lash/i.test(o.name)) o.material.alphaToCoverage = true; });
       const B = n => m.getObjectByName(n);
       // face controls baked in Blender (tools/blender/face_rig.py): shape keys on the head, eye bones for gaze
@@ -553,8 +559,8 @@ function initGL(hooks) {
       const arm = () => ({ u: new THREE.Vector3(0, -1, 0), l: new THREE.Vector3(0, -1, 0), tu: new THREE.Vector3(0, -1, 0), tl: new THREE.Vector3(0, -1, 0), w: new Spring(0, 16, 1) });
       const restQ = ["head", "neck", "uaR", "laR", "uaL", "laL"].map(k => [bn[k], bn[k].quaternion.clone()]);
       const eyeRest = [bn.eyeL, bn.eyeR].filter(Boolean).map(b => [b, b.quaternion.clone()]);
-      const corneaMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: .07, roughness: .03, metalness: 0, clearcoat: 1, clearcoatRoughness: .02, envMapIntensity: 2.2, depthWrite: false });
-      [bn.eyeL, bn.eyeR].forEach(b => { if (!b) return; b.getWorldPosition(_v1); const c = new THREE.Mesh(new THREE.SphereGeometry(.0172, 24, 16), corneaMat); c.position.copy(_v1); rex.worldToLocal(c.position); rex.add(c); b.attach(c); });
+      const corneaMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: .05, roughness: .02, metalness: 0, clearcoat: 1, clearcoatRoughness: .01, envMapIntensity: 1.6, depthWrite: false });
+      [bn.eyeL, bn.eyeR].forEach(b => { if (!b) return; b.getWorldPosition(_v1); const c = new THREE.Mesh(new THREE.SphereGeometry(.0163, 24, 16), corneaMat); c.position.copy(_v1); rex.worldToLocal(c.position); rex.add(c); b.attach(c); });
       Object.assign(MODEL, { ready: true, restQ, eyeRest, face, m, bn, mixer, A, L, walk, cur: "Idle", oneShot: null, arms: { R: arm(), L: arm() } });
       mixer.addEventListener("finished", e => { if (MODEL.oneShot && e.action === A[MODEL.oneShot.name]) { const done = MODEL.oneShot.done; MODEL.oneShot = null; e.action.fadeOut(BLEND); A[MODEL.cur].reset().fadeIn(BLEND).play(); done && done(); } });
       softenEnv();
@@ -664,7 +670,8 @@ function initGL(hooks) {
       if (iv.look > .01) { iv.head.getWorldPosition(_v3); _v4.set(rex.position.x, 1.6, rex.position.z).sub(_v3); const yaw = angDiff(iv.holder.rotation.y, Math.atan2(_v4.x, _v4.z)); rotWorld(iv.head, UP, Math.max(-.9, Math.min(.9, yaw)) * .55 * iv.look); }
     }
   }
-  function placeBlob() { const onDisc = Math.hypot(rex.position.x - MARK.x, rex.position.z - MARK.z) < 1.12; rexBlob.position.set(rex.position.x, rex.position.y + .004, rex.position.z); rexBlob.material.opacity = 1 - st.sil; rexBlob.visible = st.sil < .95; }
+  function placeBlob() { const onDisc = Math.hypot(rex.position.x - MARK.x, rex.position.z - MARK.z) < 1.12; rexBlob.position.set(rex.position.x, rex.position.y + .004, rex.position.z); rexBlob.material.opacity = 1 - st.sil; rexBlob.visible = st.sil < .95;
+    if (MODEL.ready) [MODEL.bn.footL, MODEL.bn.footR].forEach((f, i) => { f.getWorldPosition(_v1); const b = footBlobs[i]; b.position.set(_v1.x, rex.position.y + .005, _v1.z); b.rotation.z = -rex.rotation.y; const lift = Math.max(0, _v1.y - rex.position.y - .08); b.visible = rexBlob.visible; b.material.opacity = (1 - st.sil) * Math.max(0, 1 - lift * 8); }); }
 
   const SP = n => new Spring(0, n || 55, .7);
   const J = { a0x: SP(), a0z: SP(), e0: SP(), a1x: SP(), a1z: SP(), e1: SP(), lean: SP(40), tilt: SP(40), pitch: SP(40), yaw: new Spring(0, 30, .85) };
@@ -789,14 +796,32 @@ function initGL(hooks) {
     composer = new EffectComposer(renderer, rt); composer.setPixelRatio(dpr);
     composer.addPass(new RenderPass(scene, camera));
     bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), .32, .5, 1.5); composer.addPass(bloom);
-    const vg = new ShaderPass(VignetteShader); vg.uniforms.offset.value = .95; vg.uniforms.darkness.value = 1.1; composer.addPass(vg);
-    composer.addPass(new OutputPass());
+    const out = new OutputPass(); composer.addPass(out);
+    /* vignette + colour grade folded into the output pass: warm midtones, slightly cool shadows, gentle film contrast, lifted blacks */
+    out.material.fragmentShader = out.material.fragmentShader.replace(/(gl_FragColor = sRGBTransferOETF\( gl_FragColor \);\s*#endif)/, "$1\n vec3 c = gl_FragColor.rgb; vec2 vd = ( vUv - .5 ) * .95; c *= clamp( 1.0 - dot( vd, vd ) * .8, 0.0, 1.0 ); float l = dot( c, vec3( .2126, .7152, .0722 ) ); float sh = ( 1.0 - l ) * ( 1.0 - l ); float mid = 4.0 * l * ( 1.0 - l ); c *= mix( vec3( 1.0 ), vec3( .95, .99, 1.05 ), sh * .7 ); c *= mix( vec3( 1.0 ), vec3( 1.035, 1.0, .955 ), mid ); c = clamp( c, 0.0, 1.0 ); c = mix( c, c * c * ( 3.0 - 2.0 * c ), .16 ); c = mix( vec3( l ), c, .96 ); gl_FragColor.rgb = c * .985 + .012;");
+    if (!/vec3 c = gl_FragColor/.test(out.material.fragmentShader)) dbg("grade not applied");
     // a light film look: fine moving grain and a hint of lens colour fringing toward the edges
     filmPass = new ShaderPass({ uniforms: { tDiffuse: { value: null }, time: { value: 0 }, grain: { value: .022 }, ca: { value: .0016 } },
       vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
       fragmentShader: "uniform sampler2D tDiffuse; uniform float time, grain, ca; varying vec2 vUv; float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); } void main(){ vec2 d = vUv - .5; float r2 = dot(d, d); vec2 o = d * ca * r2 * 4.0; vec3 c = vec3(texture2D(tDiffuse, vUv + o).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - o).b); float n = h(vUv * 1000.0 + fract(time) * 37.0) - .5; float l = dot(c, vec3(.299, .587, .114)); c += n * grain * (1.0 - l * .6); gl_FragColor = vec4(c, 1.0); }" });
     // film pass kept out of the chain: on an integrated GPU it cost a full-screen pass for little visible gain
   } catch (e) { composer = null; dbg("composer " + e.message); }
+  /* skin: light bleeds a little past the shadow line in red (how real skin scatters light), pores break up the highlight */
+  function skinMaterial(src) {
+    const mat = new THREE.MeshPhysicalMaterial({ map: src.map, normalMap: src.normalMap, color: src.color, roughness: .5, metalness: 0, sheen: .18, sheenColor: new THREE.Color(0xb86a58), sheenRoughness: .6, envMapIntensity: .45, specularIntensity: .7 });
+    mat.name = src.name + "_skin";
+    mat.onBeforeCompile = sh => {
+      sh.uniforms.poreMap = { value: poreTex };
+      sh.fragmentShader = "uniform sampler2D poreMap;\n" + sh.fragmentShader
+        .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n vec3 pore = texture2D( poreMap, vNormalMapUv * 190.0 ).xyz; roughnessFactor = clamp( roughnessFactor + ( pore.z - .5 ) * .22, .3, .75 );")
+        .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n normal = normalize( normal + vec3( ( pore.xy - .5 ) * .28, 0.0 ) );")
+        .replace("#include <aomap_fragment>", "reflectedLight.indirectDiffuse += material.diffuseContribution * vec3( .3, .36, .46 ) * pow( saturate( dot( normal, normalize( vec3( .75, .15, .65 ) ) ) ), 1.5 ) * .55;\n#include <aomap_fragment>")
+        .replace("#include <lights_physical_pars_fragment>", THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+          "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution );",
+          "float wN = dot( geometryNormal, directLight.direction ); vec3 wrapL = vec3( saturate( ( wN + .28 ) / 1.28 ), saturate( ( wN + .1 ) / 1.1 ), saturate( ( wN + .07 ) / 1.07 ) ); reflectedLight.directDiffuse += wrapL * wrapL * directLight.color * BRDF_Lambert( material.diffuseContribution );"));
+    };
+    return mat;
+  }
   function softenEnv() { scene.traverse(o => { if (o.material && o.material.isMeshStandardMaterial && !o.material.userData.envSet) { if (!(o.material.envMapIntensity < 1)) o.material.envMapIntensity = o.material.metalness > .5 ? 1 : .5; o.material.userData.envSet = true; } }); }
 
   function resize() {
