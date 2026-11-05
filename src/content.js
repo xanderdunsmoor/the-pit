@@ -3,8 +3,8 @@
 export const VERIFIED = "2026-11-04";
 const Q = "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm";
 const K = "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/nvda-20260125.htm";
-const src10Q = section => ({ label: "10-Q, quarter ended Jul 26, 2026", section, url: Q });
-const src10K = section => ({ label: "10-K, fiscal year ended Jan 25, 2026", section, url: K });
+const src10Q = section => ({ label: "Form 10-Q · quarter ended Jul 26, 2026", section, url: Q });
+const src10K = section => ({ label: "Form 10-K · fiscal year ended Jan 25, 2026", section, url: K });
 export const SRC_Q = src10Q(""), SRC_K = src10K("");
 export const GLOSSARY = {
   "revenue": "All the money customers paid the company for its products before any costs are subtracted. Also called sales.",
@@ -44,7 +44,7 @@ export const PITCH = {
       a: "Fast. Revenue for the quarter ended July 26, 2026 was $96.2 billion, up 106% from $46.7 billion a year earlier. For the full [[fiscal year]] that ended January 25, 2026, revenue was $215.9 billion, up 65% from $130.5 billion. Two years before that, it was $60.9 billion. Growth that fast is rare for a company this size, but it also sets a very high bar to keep clearing.",
       simple: "Sales more than doubled in one year. Three years ago NVIDIA sold about $61 billion worth of products in a year. Last year it sold about $216 billion.",
       calc: ["106% = $96.2B ÷ $46.7B − 1"],
-      visual: { type: "bars", title: "Full-year revenue, $ billions", unit: "B", items: [["Fiscal 2024", 60.922], ["Fiscal 2025", 130.497], ["Fiscal 2026", 215.938, true]] }, src: [INC, src10K("Consolidated Statements of Income; MD&A summary")] },
+      visual: { type: "bars", title: "Full-year revenue, $ billions", unit: "B", items: [["Fiscal 2024", 60.922], ["Fiscal 2025", 130.497], ["Fiscal 2026", 215.938, true]] }, src: [src10K("Consolidated Statements of Income; MD&A summary"), INC] },
     { id: "profit", q: "Is NVIDIA profitable?", s: "Profit", card: ["62¢", "profit per $1 of sales"],
       a: "Very. On $96.2 billion of revenue last quarter, our [[gross margin]] was 75%, [[operating income]] was $63.7 billion and [[net income]] was $59.7 billion. That's about 62 cents of profit on every dollar of sales. Diluted earnings per share were $2.46, up from $1.08 a year ago. Profit that high gives a company room to keep investing even if prices come down.",
       simple: "After paying for everything, including making the chips, salaries and taxes, NVIDIA kept about 62 cents of every dollar customers paid.",

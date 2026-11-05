@@ -7,7 +7,7 @@
   --glass: rgba(14, 11, 16, .62);
   --glass-2: rgba(28, 24, 32, .9);
   --line: rgba(255, 255, 255, .14);
-  --accent: #e7b24c;
+  --accent: #c9a45c;
   --accent-ink: #1a1408;
   --hl: rgba(231, 178, 76, .22);
   --good: #6fcf97;
@@ -16,8 +16,8 @@
   --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --body: "Lexend", "Segoe UI", system-ui, sans-serif;
 }
-:root[data-studio="boardroom"] { --accent: #7cc6ea; --accent-ink: #06141c; --hl: rgba(124, 198, 234, .22); }
-:root[data-studio="arena"] { --accent: #ff5fa8; --accent-ink: #22030f; --hl: rgba(255, 95, 168, .24); }
+
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body { background: var(--page); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.45; overflow: hidden; }
@@ -127,3 +127,20 @@ html, body { margin: 0; height: 100%; }
 .hold > div { flex: 1; min-width: 0; }
 #pf-body { display: grid; gap: 10px; }
 .pf-note, #tx-src { font-size: 12px; color: var(--muted); }
+
+/* boardroom interface: one floating pill, champagne gold on near-black, a soft gold ring while Rex listens */
+.askbar { background: rgba(12, 11, 10, .72); border: 1px solid rgba(201, 164, 92, .22); border-radius: 999px; padding: 6px; backdrop-filter: blur(14px); box-shadow: 0 10px 40px rgba(0, 0, 0, .45); gap: 6px; }
+.askbar input { background: transparent; border: 0; border-radius: 999px; padding: 10px 14px; }
+.askbar input:focus { outline: none; }
+.askbar:focus-within { border-color: rgba(201, 164, 92, .55); }
+.askbar .icon { border-radius: 999px; background: transparent; border-color: transparent; color: #d9d2c4; }
+.askbar .icon:hover:not(:disabled) { border-color: rgba(201, 164, 92, .45); }
+#btn-mic { background: rgba(201, 164, 92, .14); color: var(--accent); }
+#btn-mic.on { background: var(--accent); color: #17120a; animation: none; box-shadow: 0 0 0 0 rgba(201, 164, 92, .55); animation: ring 1.6s ease-out infinite; }
+@keyframes ring { from { box-shadow: 0 0 0 0 rgba(201, 164, 92, .55); } to { box-shadow: 0 0 0 14px rgba(201, 164, 92, 0); } }
+.askbar .btn { border-radius: 999px; background: transparent; border-color: rgba(201, 164, 92, .35); color: #eee6d8; font-weight: 600; letter-spacing: .02em; }
+.askbar #btn-decide:not(.locked) { background: var(--accent); color: #17120a; border-color: var(--accent); }
+.go { border-radius: 999px; letter-spacing: .02em; box-shadow: 0 10px 40px rgba(201, 164, 92, .25); }
+.cashchip, .chip-ai { border-color: rgba(201, 164, 92, .3); }
+.panel { background: rgba(14, 13, 12, .86); border-color: rgba(201, 164, 92, .18); }
+@media (prefers-reduced-motion: reduce) { #btn-mic.on { animation: none; } }

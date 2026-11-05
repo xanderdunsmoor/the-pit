@@ -1,5 +1,6 @@
 # Pre-renders every line Rex can say with the Kokoro neural voice (Apache-2.0), plus mouth-movement data.
-# Usage: node tools/list-lines.mjs > lines.json && python tools/render-voice.py lines.json <kokoro.onnx> <voices.bin>
+# Usage: node tools/list-lines.mjs > lines.json && FORCE=1 python tools/render-voice.py lines.json <kokoro.onnx> <voices.bin> <kokoro-timed.onnx>
+# kokoro-timed.onnx = the same model with its duration tensor exposed as an output named "duration" (see tools/expose-durations.py)
 import json, sys, re, subprocess, base64, io
 import numpy as np, soundfile as sf
 from kokoro_onnx import Kokoro
@@ -11,31 +12,46 @@ def speak(t):
     for a, b in SAY: t = re.sub(a, b, t)
     return t
 FPS = 50
+# mouth shapes per sound (IPA from the voice model): jaw open, lips wide, lips round, lips pressed
+VIS = {}
+def setv(chars, jaw, wide, rnd, press):
+    for c in chars: VIS[c] = (jaw, wide, rnd, press)
+setv("aɑæʌ", .75, .25, 0, 0); setv("eɛ", .5, .55, 0, 0); setv("iɪj", .22, .9, 0, 0); setv("oɔɒ", .55, 0, .8, 0)
+setv("uʊw", .18, 0, 1, 0); setv("əɚɜɝᵻ", .38, .15, 0, 0); setv("mbp", 0, 0, 0, 1); setv("fv", .08, .2, 0, .45)
+setv("szʃʒtdnlθðʧʤɾ", .16, .35, 0, 0); setv("kɡŋhɹr", .28, .1, 0, 0); setv("ʔ", .05, 0, 0, 0)
 import os
+TIMED = sys.argv[4] if len(sys.argv) > 4 else None
+kt = Kokoro(TIMED, sys.argv[3]) if TIMED else k
 old = json.load(open('public/voice/index.json'))['lines'] if os.path.exists('public/voice/index.json') else {}
 keep = {lid for lid, _ in lines}
-index = {k: v for k, v in old.items() if k in keep}
+FORCE = os.environ.get('FORCE') == '1'
+index = {kk: v for kk, v in old.items() if kk in keep and not FORCE}
 for f in os.listdir('public/voice'):
     if f.endswith('.mp3') and f[:-4] not in keep: os.remove('public/voice/' + f)   # drop lines Rex no longer says
 for i, (lid, text) in enumerate(lines):
     if lid in index and os.path.exists(f'public/voice/{lid}.mp3'): continue      # already rendered
-    audio, sr = k.create(speak(text), voice=VOICE, speed=.95, lang='en-us')
+    audio, sr, tim = kt.create_timed(speak(text), voice=VOICE, speed=.95, lang='en-us', sentence_pause=0, clause_pause=.06)
     audio = audio / max(1e-6, np.abs(audio).max()) * .89
-    # trim silence at the edges but keep a tiny breath
-    nz = np.where(np.abs(audio) > .01)[0]
-    if len(nz): audio = audio[max(0, nz[0] - int(.04 * sr)): nz[-1] + int(.08 * sr)]
-    # mouth data: openness from loudness, width from brightness (ee/s wide, oo/oh round)
-    hop = sr // FPS; n = len(audio) // hop; op, wd = [], []
-    for f in range(n):
-        seg = audio[f * hop:(f + 1) * hop]; rms = float(np.sqrt(np.mean(seg ** 2)))
-        spec = np.abs(np.fft.rfft(seg * np.hanning(len(seg)))); fr = np.fft.rfftfreq(len(seg), 1 / sr)
-        cen = float((spec * fr).sum() / max(1e-9, spec.sum()))
-        op.append(rms); wd.append(cen)
-    op = np.array(op); op = np.clip(op / max(1e-6, np.percentile(op, 95)), 0, 1) ** .7
-    wd = np.clip((np.array(wd) - 900) / 2600, 0, 1)
-    mouth = np.stack([np.round(op * 255), np.round(wd * 255)], 1).astype(np.uint8).reshape(-1)
-    buf = io.BytesIO(); sf.write(buf, audio, sr, format='WAV'); 
+    nz = np.where(np.abs(audio) > .01)[0]; t0 = 0
+    if len(nz): t0 = max(0, nz[0] - int(.04 * sr)); audio = audio[t0: nz[-1] + int(.08 * sr)]
+    hop = sr // FPS; n = max(1, len(audio) // hop)
+    # loudness envelope keeps the mouth shut in silences
+    rms = np.array([np.sqrt(np.mean(audio[f * hop:(f + 1) * hop] ** 2)) for f in range(n)]); rms = np.clip(rms / max(1e-6, np.percentile(rms, 90)), 0, 1.2)
+    tgt = np.zeros((n, 4)); last = (0, 0, 0, 0)
+    for tm in tim:
+        ph = tm.phoneme
+        if ph in "ˈˌ": continue
+        v = last if ph == "ː" else VIS.get(ph, (0, 0, 0, 0) if ph in " .,!?;:—-" else (.2, .1, 0, 0))
+        last = v
+        f0, f1 = int(max(0, tm.start * sr - t0) / hop), int(max(0, tm.end * sr - t0) / hop)
+        tgt[f0:max(f0 + 1, f1)] = v
+    # coarticulation: blend neighbouring sounds (about 40 ms), and lead the audio slightly
+    ker = np.exp(-np.linspace(-2, 2, 5) ** 2); ker /= ker.sum()
+    sm = np.stack([np.convolve(tgt[:, c], ker, mode='same') for c in range(4)], 1)
+    sm = np.roll(sm, -1, axis=0); sm[:, 0] *= np.clip(rms * 1.25, 0, 1)
+    mouth = np.round(np.clip(sm, 0, 1) * 255).astype(np.uint8).reshape(-1)
+    buf = io.BytesIO(); sf.write(buf, audio, sr, format='WAV')
     subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'wav', '-i', '-', '-ac', '1', '-b:a', '64k', f'public/voice/{lid}.mp3'], input=buf.getvalue(), check=True)
     index[lid] = {'d': round(len(audio) / sr, 3), 'm': base64.b64encode(mouth.tobytes()).decode()}
     print(i + 1, len(lines), lid, round(len(audio) / sr, 1), flush=True)
-json.dump({'fps': FPS, 'lines': index}, open('public/voice/index.json', 'w'))
+json.dump({'fps': FPS, 'channels': 4, 'lines': index}, open('public/voice/index.json', 'w'))

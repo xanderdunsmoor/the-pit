@@ -6,3 +6,4 @@ private-assets/
 *.fbx
 public/models/rex.json
 preview/
+public/models/inv_*.json
